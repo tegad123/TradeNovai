@@ -4,6 +4,8 @@ import { useState } from "react"
 import { usePathname } from "next/navigation"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { Header } from "@/components/layout/Header"
+import { useUniversity } from "@/lib/contexts/UniversityContext"
+import { DemoUserSwitcher } from "@/components/university/DemoUserSwitcher"
 
 // Map routes to titles
 const routeTitles: Record<string, string> = {
@@ -22,6 +24,7 @@ export default function AppLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const { mode } = useUniversity()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Get title from pathname
@@ -44,6 +47,9 @@ export default function AppLayout({
           {children}
         </main>
       </div>
+
+      {/* Demo Switcher - Only in University mode */}
+      {mode === 'university' && <DemoUserSwitcher />}
     </div>
   )
 }

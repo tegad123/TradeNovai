@@ -167,7 +167,21 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navigationItems.map((item) => {
+          {/* University mode: Show message if no course selected */}
+          {mode === 'university' && !currentCourse && (
+            <div className="px-4 py-6 text-center">
+              <p className="text-sm text-[var(--text-muted)] mb-2">No course selected</p>
+              <Link 
+                href="/university"
+                className="text-sm text-[hsl(var(--theme-primary))] hover:underline"
+              >
+                Select or join a course
+              </Link>
+            </div>
+          )}
+          
+          {/* Show navigation only if not in university mode, or if a course is selected */}
+          {(mode !== 'university' || currentCourse) && navigationItems.map((item) => {
             const Icon = item.icon
             const href = getNavHref(item.href)
             const isActive = pathname === href || 
@@ -177,7 +191,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             return (
               <Link
                 key={item.name}
-                href={mode === 'university' && !currentCourse && item.href !== '/university/home' ? '/university' : href}
+                href={href}
                 onClick={() => {
                   if (window.innerWidth < 1024) onToggle()
                 }}
@@ -203,8 +217,8 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           })}
         </nav>
 
-        {/* Role Switcher (University mode, dev only) */}
-        {mode === 'university' && (
+        {/* Role Switcher (University mode, instructors only for testing) */}
+        {mode === 'university' && currentRole === 'instructor' && (
           <div className="p-4 border-t border-[rgba(255,255,255,var(--glass-border-opacity))]">
             <RoleSwitcher />
           </div>

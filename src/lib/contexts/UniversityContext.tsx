@@ -26,6 +26,8 @@ export interface UniversityContextType {
   mode: 'journal' | 'university'
   setMode: (mode: 'journal' | 'university') => void
   currentUser: UniversityUser | null
+  impersonateUser: (user: UniversityUser | null) => void
+  isImpersonating: boolean
   currentRole: UserRole
   setCurrentRole: (role: UserRole) => void
   courses: Course[]
@@ -62,14 +64,18 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
   const [courses, setCourses] = useState<Course[]>([])
   const [currentCourse, setCurrentCourseState] = useState<Course | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [impersonatedUser, setImpersonatedUser] = useState<UniversityUser | null>(null)
 
   // Get current university user from Supabase auth user
-  const currentUser: UniversityUser | null = user ? {
+  const realUser: UniversityUser | null = user ? {
     id: user.id,
     name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
     email: user.email || '',
     avatarUrl: user.user_metadata?.avatar_url
   } : null
+
+  // The user actually used by the app (real or impersonated)
+  const currentUser = impersonatedUser || realUser
 
   // Load state from localStorage
   useEffect(() => {
@@ -233,12 +239,25 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
     setCourses(userCourses)
   }, [user])
 
+  const impersonateUser = useCallback(async (demoUser: UniversityUser | null) => {
+    setImpersonatedUser(demoUser)
+    if (demoUser && currentCourse) {
+      const role = await getUserRoleInCourse(demoUser.id, currentCourse.id)
+      setCurrentRoleState(role || 'student')
+    } else if (!demoUser && user && currentCourse) {
+      const role = await getUserRoleInCourse(user.id, currentCourse.id)
+      setCurrentRoleState(role || 'student')
+    }
+  }, [user, currentCourse])
+
   return (
     <UniversityContext.Provider
       value={{
         mode,
         setMode,
         currentUser,
+        impersonateUser,
+        isImpersonating: !!impersonatedUser,
         currentRole,
         setCurrentRole,
         courses,

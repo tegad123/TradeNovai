@@ -112,10 +112,14 @@ export interface TradeLog {
   exitPrice: number
   pnl: number
   reflection: string
+  screenshot_url?: string
+  screenshot_urls?: string[]
   screenshots?: string[]
   submittedAt: string
+  feedback?: string
   instructorFeedback?: string
   feedbackAt?: string
+  trade_date?: string  // Alias from DB
 }
 
 export interface StudentProgress {

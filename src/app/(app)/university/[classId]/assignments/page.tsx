@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import {
   FileText,
   Clock,
@@ -11,6 +11,12 @@ import {
   Loader2,
   X,
   FileUp,
+  Download,
+  Users,
+  Settings2,
+  AlertTriangle,
+  File,
+  Image as ImageIcon,
 } from "lucide-react"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
@@ -23,9 +29,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import { useUniversityAssignments } from "@/lib/hooks/useUniversityAssignments"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
-import type { Assignment, Submission } from "@/lib/university/types"
+import { uploadFile } from "@/lib/supabase/storageUtils"
+import { 
+  getCourseStudents, 
+  getAssignmentTargets, 
+  assignAssignmentToStudent, 
+  unassignAssignmentFromStudent,
+  updateAssignment,
+  type Assignment, 
+  type Submission, 
+  type UserProfile 
+} from "@/lib/supabase/universityUtils"
 
 interface PageProps {
   params: { classId: string }
@@ -33,24 +50,41 @@ interface PageProps {
 
 export default function AssignmentsPage({ params }: PageProps) {
   const { classId } = params
-  const { currentRole } = useUniversity()
+  const { currentRole, currentCourse, currentUser } = useUniversity()
   const {
     assignments,
     submissions,
     loading: isLoading,
     submitAssignment,
     createAssignment,
+    refetch,
   } = useUniversityAssignments(classId, currentRole)
   
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null)
   const [submissionContent, setSubmissionContent] = useState("")
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  
+  // Create assignment state
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState("")
   const [newDescription, setNewDescription] = useState("")
   const [newDueDate, setNewDueDate] = useState("")
   const [newPoints, setNewPoints] = useState("100")
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([])
+  const [uploadingAttachments, setUploadingAttachments] = useState(false)
+  
+  // Manage access state
+  const [manageAccessOpen, setManageAccessOpen] = useState(false)
+  const [accessAssignmentId, setAccessAssignmentId] = useState<string | null>(null)
+  const [courseStudents, setCourseStudents] = useState<UserProfile[]>([])
+  const [assignedStudentIds, setAssignedStudentIds] = useState<string[]>([])
+  const [updatingAccess, setUpdatingAccess] = useState(false)
+  
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
 
   const isInstructor = currentRole === 'instructor'
 
@@ -71,10 +105,15 @@ export default function AssignmentsPage({ params }: PageProps) {
     }
     
     if (submission?.status === 'submitted') {
+      const isLate = submission.is_late
       return (
-        <span className="flex items-center gap-1 text-xs text-blue-400 bg-blue-400/10 px-2 py-1 rounded-full">
-          <Clock className="w-3 h-3" />
-          Submitted
+        <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+          isLate 
+            ? 'text-orange-400 bg-orange-400/10' 
+            : 'text-blue-400 bg-blue-400/10'
+        }`}>
+          {isLate ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+          {isLate ? 'Submitted Late' : 'Submitted'}
         </span>
       )
     }
@@ -99,7 +138,7 @@ export default function AssignmentsPage({ params }: PageProps) {
     )
   }
 
-  const formatDate = (dateStr: string | undefined) => {
+  const formatDate = (dateStr: string | undefined | null) => {
     if (!dateStr) return 'No due date'
     return new Date(dateStr).toLocaleDateString('en-US', {
       month: 'short',
@@ -109,63 +148,159 @@ export default function AssignmentsPage({ params }: PageProps) {
     })
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setSubmissionFile(file)
+    }
+  }
+
   const handleSubmit = async () => {
-    if (!selectedAssignment || !submissionContent.trim()) return
+    if (!selectedAssignment || (!submissionContent.trim() && !submissionFile)) return
+    if (!currentUser) return
     
     setIsSubmitting(true)
     
-    const success = await submitAssignment(selectedAssignment.id, submissionContent.trim())
+    let fileUrl: string | undefined
+    
+    // Upload file if present
+    if (submissionFile) {
+      setUploadingFile(true)
+      const result = await uploadFile(submissionFile, currentUser.id, 'submissions')
+      setUploadingFile(false)
+      
+      if (result.success && result.url) {
+        fileUrl = result.url
+      } else {
+        alert('Failed to upload file: ' + result.error)
+        setIsSubmitting(false)
+        return
+      }
+    }
+    
+    const success = await submitAssignment(selectedAssignment.id, submissionContent.trim(), fileUrl)
     
     if (success) {
       setSelectedAssignment(null)
       setSubmissionContent("")
+      setSubmissionFile(null)
     }
     
     setIsSubmitting(false)
   }
 
+  const handleAttachmentSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files) {
+      setAttachmentFiles(prev => [...prev, ...Array.from(files)])
+    }
+  }
+
+  const removeAttachment = (index: number) => {
+    setAttachmentFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handleCreate = async () => {
-    if (!newTitle.trim()) return
+    if (!newTitle.trim() || !currentUser) return
     setCreating(true)
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'assignments/page.tsx:handleCreate',message:'submit create assignment',data:{courseId:classId,title:newTitle.trim(),hasDueDate:!!newDueDate,points:newPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
-
-    let assignment: any = null
     try {
-      assignment = await createAssignment({
+      // Upload attachments first
+      let attachmentUrls: string[] = []
+      if (attachmentFiles.length > 0) {
+        setUploadingAttachments(true)
+        for (const file of attachmentFiles) {
+          const result = await uploadFile(file, currentUser.id, 'assignments')
+          if (result.success && result.url) {
+            attachmentUrls.push(result.url)
+          }
+        }
+        setUploadingAttachments(false)
+      }
+
+      const assignment = await createAssignment({
         title: newTitle.trim(),
         description: newDescription.trim() || undefined,
         due_date: newDueDate ? new Date(newDueDate).toISOString() : undefined,
         points: Number.isFinite(Number(newPoints)) ? Number(newPoints) : 100,
         type: 'reflection',
+        attachments: attachmentUrls,
       })
+
+      if (!assignment) {
+        alert("Failed to create assignment. Check Supabase tables and RLS.")
+        setCreating(false)
+        return
+      }
+
+      setCreateOpen(false)
+      setNewTitle("")
+      setNewDescription("")
+      setNewDueDate("")
+      setNewPoints("100")
+      setAttachmentFiles([])
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'assignments/page.tsx:handleCreate',message:'createAssignment threw',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       alert(`Error creating assignment: ${String(err)}`)
+    } finally {
       setCreating(false)
-      return
     }
+  }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'assignments/page.tsx:handleCreate',message:'create assignment result',data:{success:!!assignment,assignmentId:assignment?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
-
-    if (!assignment) {
-      alert("Failed to create assignment. This is usually caused by missing Supabase tables (run 003_university_tables.sql) or RLS blocking inserts.")
-      setCreating(false)
-      return
+  const handleOpenManageAccess = async (assignmentId: string) => {
+    setAccessAssignmentId(assignmentId)
+    setManageAccessOpen(true)
+    
+    if (currentCourse?.id) {
+      const students = await getCourseStudents(currentCourse.id)
+      setCourseStudents(students)
+      
+      const targets = await getAssignmentTargets(assignmentId)
+      setAssignedStudentIds(targets)
     }
+  }
 
-    setCreateOpen(false)
-    setNewTitle("")
-    setNewDescription("")
-    setNewDueDate("")
-    setNewPoints("100")
-    setCreating(false)
+  const handleToggleAssignment = async (studentId: string) => {
+    if (!accessAssignmentId) return
+    
+    const isAssigned = assignedStudentIds.includes(studentId)
+    setUpdatingAccess(true)
+    
+    try {
+      if (isAssigned) {
+        const success = await unassignAssignmentFromStudent(accessAssignmentId, studentId)
+        if (success) {
+          setAssignedStudentIds(prev => prev.filter(id => id !== studentId))
+        }
+      } else {
+        const success = await assignAssignmentToStudent(accessAssignmentId, studentId)
+        if (success) {
+          setAssignedStudentIds(prev => [...prev, studentId])
+        }
+      }
+    } catch (error) {
+      console.error('Toggle assignment error:', error)
+    } finally {
+      setUpdatingAccess(false)
+    }
+  }
+
+  const handleToggleRestricted = async (restricted: boolean) => {
+    if (!accessAssignmentId) return
+    await updateAssignment(accessAssignmentId, { is_restricted: restricted })
+    refetch()
+  }
+
+  const getFileIcon = (url: string) => {
+    const ext = url.split('.').pop()?.toLowerCase()
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
+      return <ImageIcon className="w-4 h-4" />
+    }
+    return <File className="w-4 h-4" />
+  }
+
+  const getFileName = (url: string) => {
+    const parts = url.split('/')
+    return parts[parts.length - 1].split('?')[0] || 'File'
   }
 
   if (isLoading) {
@@ -193,12 +328,7 @@ export default function AssignmentsPage({ params }: PageProps) {
             <Button
               variant="glass-theme"
               size="sm"
-              onClick={() => {
-                setCreateOpen(true)
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'assignments/page.tsx:CreateAssignmentButton',message:'open create assignment dialog',data:{courseId:classId},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v1',hypothesisId:'H1'})}).catch(()=>{});
-                // #endregion
-              }}
+              onClick={() => setCreateOpen(true)}
             >
               <FileUp className="w-4 h-4 mr-2" />
               Create Assignment
@@ -216,12 +346,19 @@ export default function AssignmentsPage({ params }: PageProps) {
                 ? "Create your first assignment to get started"
                 : "Your instructor hasn't posted any assignments yet"}
             </p>
+            {isInstructor && (
+              <Button variant="glass-theme" className="mt-4" onClick={() => setCreateOpen(true)}>
+                <FileUp className="w-4 h-4 mr-2" />
+                Create First Assignment
+              </Button>
+            )}
           </GlassCard>
         ) : (
           <div className="space-y-4">
             {assignments.map((assignment) => {
               const submission = getSubmissionForAssignment(assignment.id)
               const canSubmit = !submission && currentRole === 'student'
+              const hasAttachments = (assignment.attachments?.length || 0) > 0
               
               return (
                 <GlassCard
@@ -232,15 +369,21 @@ export default function AssignmentsPage({ params }: PageProps) {
                   onClick={() => canSubmit && setSelectedAssignment(assignment)}
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-4 flex-1">
                       <div className="w-10 h-10 rounded-xl bg-theme-gradient/20 flex items-center justify-center shrink-0">
                         <FileText className="w-5 h-5 text-[hsl(var(--theme-primary))]" />
                       </div>
                       
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-medium text-white">{assignment.title}</h3>
                           {getStatusBadge(assignment)}
+                          {assignment.is_restricted && (
+                            <span className="flex items-center gap-1 text-xs text-purple-400 bg-purple-400/10 px-2 py-1 rounded-full">
+                              <Users className="w-3 h-3" />
+                              Restricted
+                            </span>
+                          )}
                         </div>
                         
                         <p className="text-sm text-[var(--text-muted)] line-clamp-2">
@@ -252,6 +395,26 @@ export default function AssignmentsPage({ params }: PageProps) {
                           <span>{assignment.points} points</span>
                         </div>
 
+                        {/* Attachments from instructor */}
+                        {hasAttachments && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {assignment.attachments?.map((url, idx) => (
+                              <a
+                                key={idx}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1 text-xs text-[hsl(var(--theme-primary))] bg-[hsl(var(--theme-primary))]/10 px-2 py-1 rounded-lg hover:bg-[hsl(var(--theme-primary))]/20 transition-colors"
+                              >
+                                {getFileIcon(url)}
+                                <span className="max-w-[100px] truncate">{getFileName(url)}</span>
+                                <Download className="w-3 h-3" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+
                         {submission?.feedback && (
                           <div className="mt-2 p-2 rounded-lg bg-green-400/10 border border-green-400/20">
                             <p className="text-xs text-green-400 font-medium mb-1">Instructor Feedback:</p>
@@ -261,9 +424,24 @@ export default function AssignmentsPage({ params }: PageProps) {
                       </div>
                     </div>
 
-                    {canSubmit && (
-                      <ChevronRight className="w-5 h-5 text-[var(--text-muted)]" />
-                    )}
+                    <div className="flex items-center gap-2">
+                      {isInstructor && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-8 h-8 rounded-lg hover:bg-white/10"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenManageAccess(assignment.id)
+                          }}
+                        >
+                          <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
+                        </Button>
+                      )}
+                      {canSubmit && (
+                        <ChevronRight className="w-5 h-5 text-[var(--text-muted)]" />
+                      )}
+                    </div>
                   </div>
                 </GlassCard>
               )
@@ -284,7 +462,10 @@ export default function AssignmentsPage({ params }: PageProps) {
                 </p>
               </div>
               <button
-                onClick={() => setSelectedAssignment(null)}
+                onClick={() => {
+                  setSelectedAssignment(null)
+                  setSubmissionFile(null)
+                }}
                 className="p-2 rounded-lg hover:bg-white/10 transition-colors"
               >
                 <X className="w-5 h-5 text-[var(--text-muted)]" />
@@ -297,6 +478,28 @@ export default function AssignmentsPage({ params }: PageProps) {
                 <p className="text-sm text-[var(--text-muted)]">{selectedAssignment.description}</p>
               </div>
 
+              {/* Instructor attachments */}
+              {(selectedAssignment.attachments?.length || 0) > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-white mb-2">Assignment Materials</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedAssignment.attachments?.map((url, idx) => (
+                      <a
+                        key={idx}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-[hsl(var(--theme-primary))] bg-[hsl(var(--theme-primary))]/10 px-3 py-2 rounded-lg hover:bg-[hsl(var(--theme-primary))]/20 transition-colors"
+                      >
+                        {getFileIcon(url)}
+                        <span className="max-w-[150px] truncate">{getFileName(url)}</span>
+                        <Download className="w-4 h-4" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium text-white mb-2 block">Your Submission</label>
                 <textarea
@@ -307,27 +510,64 @@ export default function AssignmentsPage({ params }: PageProps) {
                 />
               </div>
 
-              <div className="flex items-center gap-4">
-                <Button variant="glass" className="flex-1" disabled>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Attach File (Coming Soon)
-                </Button>
+              {/* File upload dropbox */}
+              <div>
+                <label className="text-sm font-medium text-white mb-2 block">Attach File (Optional)</label>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif"
+                  className="hidden"
+                />
+                
+                {submissionFile ? (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                    <div className="flex items-center gap-2">
+                      {getFileIcon(submissionFile.name)}
+                      <span className="text-sm text-white">{submissionFile.name}</span>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        ({(submissionFile.size / 1024).toFixed(1)} KB)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setSubmissionFile(null)}
+                      className="p-1 rounded hover:bg-white/10"
+                    >
+                      <X className="w-4 h-4 text-[var(--text-muted)]" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full p-6 border-2 border-dashed border-white/20 rounded-xl hover:border-[hsl(var(--theme-primary))]/50 hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex flex-col items-center gap-2 text-[var(--text-muted)]">
+                      <Upload className="w-8 h-8" />
+                      <span className="text-sm">Click or drag file to upload</span>
+                      <span className="text-xs">PDF, DOC, TXT, or images up to 10MB</span>
+                    </div>
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="flex justify-end gap-3 p-4 border-t border-white/10">
-              <Button variant="glass" onClick={() => setSelectedAssignment(null)}>
+              <Button variant="glass" onClick={() => {
+                setSelectedAssignment(null)
+                setSubmissionFile(null)
+              }}>
                 Cancel
               </Button>
               <Button
                 variant="glass-theme"
                 onClick={handleSubmit}
-                disabled={!submissionContent.trim() || isSubmitting}
+                disabled={(!submissionContent.trim() && !submissionFile) || isSubmitting}
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Submitting...
+                    {uploadingFile ? 'Uploading...' : 'Submitting...'}
                   </>
                 ) : (
                   <>
@@ -341,14 +581,15 @@ export default function AssignmentsPage({ params }: PageProps) {
         </div>
       )}
 
+      {/* Create Assignment Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Create assignment</DialogTitle>
+            <DialogTitle>Create Assignment</DialogTitle>
             <DialogDescription>Create a new assignment for your students.</DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-4">
             <div className="space-y-1">
               <label className="text-sm text-[var(--text-muted)]">Title</label>
               <input
@@ -360,7 +601,7 @@ export default function AssignmentsPage({ params }: PageProps) {
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm text-[var(--text-muted)]">Description (optional)</label>
+              <label className="text-sm text-[var(--text-muted)]">Description</label>
               <textarea
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
@@ -370,9 +611,9 @@ export default function AssignmentsPage({ params }: PageProps) {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-sm text-[var(--text-muted)]">Due date (optional)</label>
+                <label className="text-sm text-[var(--text-muted)]">Due Date</label>
                 <input
                   type="datetime-local"
                   value={newDueDate}
@@ -391,6 +632,45 @@ export default function AssignmentsPage({ params }: PageProps) {
                 />
               </div>
             </div>
+
+            {/* Attachment upload */}
+            <div className="space-y-2">
+              <label className="text-sm text-[var(--text-muted)]">Attachments (PDFs, Screenshots)</label>
+              <input
+                type="file"
+                ref={attachmentInputRef}
+                onChange={handleAttachmentSelect}
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif"
+                multiple
+                className="hidden"
+              />
+              
+              {attachmentFiles.length > 0 && (
+                <div className="space-y-2">
+                  {attachmentFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                      <div className="flex items-center gap-2">
+                        {getFileIcon(file.name)}
+                        <span className="text-sm text-white truncate max-w-[200px]">{file.name}</span>
+                      </div>
+                      <button onClick={() => removeAttachment(idx)} className="p-1 hover:bg-white/10 rounded">
+                        <X className="w-4 h-4 text-[var(--text-muted)]" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <Button
+                variant="glass"
+                size="sm"
+                className="w-full"
+                onClick={() => attachmentInputRef.current?.click()}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Add Attachment
+              </Button>
+            </div>
           </div>
 
           <DialogFooter className="mt-6">
@@ -402,8 +682,79 @@ export default function AssignmentsPage({ params }: PageProps) {
               onClick={handleCreate}
               disabled={creating || !newTitle.trim()}
             >
-              {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Create assignment
+              {creating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {uploadingAttachments ? 'Uploading...' : 'Creating...'}
+                </>
+              ) : (
+                'Create Assignment'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Access Dialog */}
+      <Dialog open={manageAccessOpen} onOpenChange={setManageAccessOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage Access</DialogTitle>
+            <DialogDescription>
+              Control which students can see this assignment.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-6">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Restrict Access</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Only assigned students will see this assignment.
+                </div>
+              </div>
+              <Switch
+                checked={assignments.find(a => a.id === accessAssignmentId)?.is_restricted || false}
+                onCheckedChange={handleToggleRestricted}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-white px-1">Assign Students</h4>
+              <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {courseStudents.length > 0 ? (
+                  courseStudents.map(student => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-theme-gradient flex items-center justify-center text-xs font-bold text-white uppercase">
+                          {student.full_name?.charAt(0) || 'S'}
+                        </div>
+                        <span className="text-sm text-white font-medium">
+                          {student.full_name || 'Student'}
+                        </span>
+                      </div>
+                      <Switch
+                        disabled={updatingAccess}
+                        checked={assignedStudentIds.includes(student.id)}
+                        onCheckedChange={() => handleToggleAssignment(student.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-4">
+                    No students enrolled yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button variant="glass-theme" className="w-full" onClick={() => setManageAccessOpen(false)}>
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -411,4 +762,3 @@ export default function AssignmentsPage({ params }: PageProps) {
     </PageContainer>
   )
 }
-

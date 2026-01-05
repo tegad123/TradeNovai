@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import {
   LineChart,
   Calendar,
-  Image,
+  Image as ImageIcon,
   Send,
   Plus,
   Loader2,
@@ -13,12 +13,15 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronRight,
+  Upload,
+  X,
 } from "lucide-react"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
 import { Button } from "@/components/ui/button"
 import { useUniversityTradeLogs } from "@/lib/hooks/useUniversityTradeLogs"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
+import { uploadFile } from "@/lib/supabase/storageUtils"
 import type { TradeLog } from "@/lib/university/types"
 
 interface PageProps {
@@ -27,28 +30,72 @@ interface PageProps {
 
 export default function TradeLogsPage({ params }: PageProps) {
   const { classId } = params
-  const { currentRole } = useUniversity()
+  const { currentRole, currentUser } = useUniversity()
   const { tradeLogs, isLoading, submitTradeLog } = useUniversityTradeLogs(classId)
   
   const [showForm, setShowForm] = useState(false)
   const [tradeDate, setTradeDate] = useState(new Date().toISOString().split('T')[0])
   const [reflection, setReflection] = useState("")
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null)
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false)
   const [expandedLog, setExpandedLog] = useState<string | null>(null)
+  
+  const screenshotInputRef = useRef<HTMLInputElement>(null)
 
   const isInstructor = currentRole === 'instructor'
+  
+  const handleScreenshotSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setScreenshotFile(file)
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setScreenshotPreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+  
+  const clearScreenshot = () => {
+    setScreenshotFile(null)
+    setScreenshotPreview(null)
+    if (screenshotInputRef.current) {
+      screenshotInputRef.current.value = ''
+    }
+  }
 
   const handleSubmit = async () => {
-    if (!reflection.trim()) return
+    if (!reflection.trim() || !currentUser) return
     
     setIsSubmitting(true)
     
-    const success = await submitTradeLog(tradeDate, reflection.trim())
+    let screenshotUrl: string | undefined
+    
+    // Upload screenshot if present
+    if (screenshotFile) {
+      setUploadingScreenshot(true)
+      const result = await uploadFile(screenshotFile, currentUser.id, 'trade-logs')
+      setUploadingScreenshot(false)
+      
+      if (result.success && result.url) {
+        screenshotUrl = result.url
+      } else {
+        alert('Failed to upload screenshot: ' + result.error)
+        setIsSubmitting(false)
+        return
+      }
+    }
+    
+    const success = await submitTradeLog(tradeDate, reflection.trim(), screenshotUrl)
     
     if (success) {
       setShowForm(false)
       setReflection("")
       setTradeDate(new Date().toISOString().split('T')[0])
+      clearScreenshot()
     }
     
     setIsSubmitting(false)
@@ -150,15 +197,49 @@ export default function TradeLogsPage({ params }: PageProps) {
                 />
               </div>
 
-              {/* Screenshot Upload (placeholder) */}
+              {/* Screenshot Upload */}
               <div>
                 <label className="text-sm font-medium text-[var(--text-muted)] mb-2 block">
-                  Screenshots (optional)
+                  Screenshot (optional)
                 </label>
-                <Button variant="glass" className="w-full justify-center" disabled>
-                  <Image className="w-4 h-4 mr-2" />
-                  Upload Screenshots (Coming Soon)
-                </Button>
+                <input
+                  type="file"
+                  ref={screenshotInputRef}
+                  onChange={handleScreenshotSelect}
+                  accept="image/*"
+                  className="hidden"
+                />
+                
+                {screenshotPreview ? (
+                  <div className="relative rounded-xl overflow-hidden border border-white/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img 
+                      src={screenshotPreview} 
+                      alt="Screenshot preview" 
+                      className="w-full h-48 object-cover"
+                    />
+                    <button
+                      onClick={clearScreenshot}
+                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 transition-colors"
+                    >
+                      <X className="w-4 h-4 text-white" />
+                    </button>
+                    <div className="absolute bottom-0 inset-x-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                      <p className="text-xs text-white truncate">{screenshotFile?.name}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => screenshotInputRef.current?.click()}
+                    className="w-full p-6 border-2 border-dashed border-white/20 rounded-xl hover:border-[hsl(var(--theme-primary))]/50 hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex flex-col items-center gap-2 text-[var(--text-muted)]">
+                      <Upload className="w-8 h-8" />
+                      <span className="text-sm">Click to upload screenshot</span>
+                      <span className="text-xs">PNG, JPG, GIF up to 10MB</span>
+                    </div>
+                  </button>
+                )}
               </div>
 
               {/* Actions */}
@@ -174,7 +255,7 @@ export default function TradeLogsPage({ params }: PageProps) {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Submitting...
+                      {uploadingScreenshot ? 'Uploading...' : 'Submitting...'}
                     </>
                   ) : (
                     <>
@@ -253,19 +334,39 @@ export default function TradeLogsPage({ params }: PageProps) {
                     </div>
 
                     {/* Screenshots */}
-                    {log.screenshot_urls && log.screenshot_urls.length > 0 && (
+                    {(log.screenshot_url || (log.screenshot_urls && log.screenshot_urls.length > 0)) && (
                       <div>
-                        <h4 className="text-sm font-medium text-[var(--text-muted)] mb-2">Screenshots</h4>
+                        <h4 className="text-sm font-medium text-[var(--text-muted)] mb-2">Screenshot</h4>
                         <div className="flex gap-2 flex-wrap">
-                          {log.screenshot_urls.map((url, i) => (
+                          {log.screenshot_url && (
+                            <a
+                              href={log.screenshot_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block rounded-xl overflow-hidden border border-white/10 hover:border-[hsl(var(--theme-primary))] transition-colors"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img 
+                                src={log.screenshot_url} 
+                                alt="Trade screenshot" 
+                                className="w-48 h-32 object-cover"
+                              />
+                            </a>
+                          )}
+                          {log.screenshot_urls?.map((url, i) => (
                             <a
                               key={i}
                               href={url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="w-24 h-24 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:border-[hsl(var(--theme-primary))] transition-colors"
+                              className="block rounded-xl overflow-hidden border border-white/10 hover:border-[hsl(var(--theme-primary))] transition-colors"
                             >
-                              <Image className="w-8 h-8 text-[var(--text-muted)]" />
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img 
+                                src={url} 
+                                alt={`Trade screenshot ${i + 1}`} 
+                                className="w-48 h-32 object-cover"
+                              />
                             </a>
                           ))}
                         </div>

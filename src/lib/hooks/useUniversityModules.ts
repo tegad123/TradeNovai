@@ -9,6 +9,10 @@ import {
   createLesson as createLessonUtil,
   updateLesson as updateLessonUtil,
   markLessonComplete as markLessonCompleteUtil,
+  removeLessonVideo as removeLessonVideoUtil,
+  getModuleAssignments,
+  assignModuleToStudent,
+  unassignModuleFromStudent,
   type Module,
   type Lesson
 } from '@/lib/supabase/universityUtils'
@@ -97,7 +101,7 @@ export function useUniversityModules(courseId: string | null) {
   // Update module (instructor only)
   const updateModule = useCallback(async (
     moduleId: string,
-    data: Partial<{ title: string; description: string; order: number; is_published: boolean }>
+    data: Partial<{ title: string; description: string; order: number; is_published: boolean; is_restricted: boolean }>
   ): Promise<boolean> => {
     const success = await updateModuleUtil(moduleId, data)
     
@@ -136,6 +140,32 @@ export function useUniversityModules(courseId: string | null) {
     return success
   }, [loadModules])
 
+  // Remove lesson video (instructor only)
+  const removeLessonVideo = useCallback(async (lessonId: string): Promise<boolean> => {
+    const success = await removeLessonVideoUtil(lessonId)
+    if (success) {
+      await loadModules()
+    }
+    return success
+  }, [loadModules])
+
+  // Module assignments (instructor only)
+  const assignModule = useCallback(async (moduleId: string, userId: string): Promise<boolean> => {
+    const success = await assignModuleToStudent(moduleId, userId)
+    if (success) {
+      await loadModules()
+    }
+    return success
+  }, [loadModules])
+
+  const unassignModule = useCallback(async (moduleId: string, userId: string): Promise<boolean> => {
+    const success = await unassignModuleFromStudent(moduleId, userId)
+    if (success) {
+      await loadModules()
+    }
+    return success
+  }, [loadModules])
+
   return {
     modules,
     loading,
@@ -148,6 +178,9 @@ export function useUniversityModules(courseId: string | null) {
     updateModule,
     createLesson,
     updateLesson,
+    removeLessonVideo,
+    assignModule,
+    unassignModule,
     refresh: loadModules
   }
 }

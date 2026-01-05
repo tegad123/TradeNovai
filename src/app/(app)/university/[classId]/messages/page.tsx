@@ -19,7 +19,7 @@ import { useUniversityMessages } from "@/lib/hooks/useUniversityMessages"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
 import { Button } from "@/components/ui/button"
-import { getCourseStudents } from "@/lib/supabase/universityUtils"
+import { getCourseStudents, getCourseInstructor } from "@/lib/supabase/universityUtils"
 import type { UserProfile } from "@/lib/supabase/universityUtils"
 
 export default function MessagesPage() {
@@ -49,15 +49,27 @@ export default function MessagesPage() {
     getUnreadCount
   } = useUniversityMessages(currentCourse?.id || null)
 
-  // Load course members for new thread
+  // Load available recipients for new thread
+  // Students can only message the instructor
+  // Instructors can message any student
   useEffect(() => {
     async function loadMembers() {
       if (!currentCourse) return
-      const students = await getCourseStudents(currentCourse.id)
-      setCourseMembers(students)
+      
+      if (currentRole === 'instructor') {
+        // Instructors can message any student
+        const students = await getCourseStudents(currentCourse.id)
+        setCourseMembers(students)
+      } else {
+        // Students can only message the instructor
+        const instructor = await getCourseInstructor(currentCourse.id)
+        if (instructor) {
+          setCourseMembers([instructor])
+        }
+      }
     }
     loadMembers()
-  }, [currentCourse])
+  }, [currentCourse, currentRole])
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -132,12 +144,14 @@ export default function MessagesPage() {
           <div>
             <h1 className="text-2xl font-bold text-white">Messages</h1>
             <p className="text-[var(--text-muted)]">
-              Communicate with your {currentRole === 'instructor' ? 'students' : 'instructor and classmates'}
+              {currentRole === 'instructor' 
+                ? 'Communicate with your students' 
+                : 'Message your instructor directly'}
             </p>
           </div>
           <Button variant="glass-theme" onClick={() => setShowNewThreadModal(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            New Message
+            {currentRole === 'instructor' ? 'New Message' : 'Message Instructor'}
           </Button>
         </div>
 
@@ -351,7 +365,14 @@ export default function MessagesPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-[var(--text-muted)]">Select Recipients</label>
+                  <label className="text-sm text-[var(--text-muted)]">
+                    {currentRole === 'instructor' ? 'Select Recipients' : 'Recipient'}
+                  </label>
+                  {currentRole === 'student' && (
+                    <p className="text-xs text-[var(--text-muted)] -mt-1">
+                      Students can only message the instructor
+                    </p>
+                  )}
                   <div className="max-h-48 overflow-y-auto rounded-xl bg-white/5 border border-white/10">
                     {courseMembers.length > 0 ? courseMembers.map((member) => (
                       <button

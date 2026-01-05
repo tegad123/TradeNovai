@@ -9,7 +9,7 @@ import {
   Clock,
   ChevronRight,
   Loader2,
-  AlertCircle,
+  GraduationCap,
 } from "lucide-react"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
@@ -31,19 +31,40 @@ export default function InstructorDashboardPage({ params }: PageProps) {
   const { submissions, loading: assignmentsLoading } = useUniversityAssignments(classId, currentRole)
   const { tradeLogs, isLoading: logsLoading } = useUniversityTradeLogs(classId)
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'instructor/page.tsx:mount',message:'data structure check',data:{count:allStudentsProgress?.length,firstItem:allStudentsProgress?.[0]?JSON.stringify(allStudentsProgress[0]).slice(0,400):null,keys:allStudentsProgress?.[0]?Object.keys(allStudentsProgress[0]):null,hasStudentProp:allStudentsProgress?.[0]?.hasOwnProperty('student'),hasUserName:allStudentsProgress?.[0]?.hasOwnProperty('user_name')},timestamp:Date.now(),sessionId:'debug-session',runId:'instructor-v1',hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+
   const isLoading = progressLoading || assignmentsLoading || logsLoading
 
-  // Redirect if not instructor
+  // Gate for non-instructors: Show "Become an Instructor" enrollment screen
   if (currentRole !== 'instructor') {
     return (
       <PageContainer>
-        <GlassCard className="p-8 text-center">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">Access Denied</h3>
-          <p className="text-[var(--text-muted)]">
-            This page is only accessible to instructors
-          </p>
-        </GlassCard>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <GlassCard className="p-8 text-center max-w-md">
+            <div className="w-16 h-16 rounded-2xl bg-[hsl(var(--theme-primary))]/20 flex items-center justify-center mx-auto mb-6">
+              <GraduationCap className="w-8 h-8 text-[hsl(var(--theme-primary))]" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Become an Instructor</h3>
+            <p className="text-[var(--text-muted)] mb-6">
+              Enter your instructor access code to create and manage courses.
+            </p>
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Enter access code"
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-primary))]/50"
+              />
+              <Button variant="glass-theme" className="w-full">
+                Verify Code
+              </Button>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mt-6">
+              Don&apos;t have a code? <a href="#" className="text-[hsl(var(--theme-primary))] hover:underline">Learn about instructor accounts</a>
+            </p>
+          </GlassCard>
+        </div>
       </PageContainer>
     )
   }
@@ -278,35 +299,35 @@ export default function InstructorDashboardPage({ params }: PageProps) {
                 </thead>
                 <tbody>
                   {allStudentsProgress.slice(0, 5).map((sp) => {
-                    const p = sp.progress
-                    const lessonPct = p && p.total_lessons > 0 
-                      ? Math.round((p.lessons_completed / p.total_lessons) * 100) 
+                    // sp is a flat StudentProgress object (user_id, user_name, lessons_completed, etc.)
+                    const lessonPct = sp.total_lessons > 0 
+                      ? Math.round((sp.lessons_completed / sp.total_lessons) * 100) 
                       : 0
-                    const assignPct = p && p.total_assignments > 0 
-                      ? Math.round((p.assignments_submitted / p.total_assignments) * 100) 
+                    const assignPct = sp.total_assignments > 0 
+                      ? Math.round((sp.assignments_completed / sp.total_assignments) * 100) 
                       : 0
                     const overallPct = Math.round((lessonPct + assignPct) / 2)
 
                     return (
-                      <tr key={sp.student.id} className="border-b border-white/5">
+                      <tr key={sp.user_id} className="border-b border-white/5">
                         <td className="py-3 px-2">
                           <p className="text-sm font-medium text-white">
-                            {sp.student.name || sp.student.email}
+                            {sp.user_name || 'Student'}
                           </p>
                         </td>
                         <td className="py-3 px-2">
                           <span className="text-sm text-[var(--text-muted)]">
-                            {p?.lessons_completed || 0}/{p?.total_lessons || 0}
+                            {sp.lessons_completed || 0}/{sp.total_lessons || 0}
                           </span>
                         </td>
                         <td className="py-3 px-2">
                           <span className="text-sm text-[var(--text-muted)]">
-                            {p?.assignments_submitted || 0}/{p?.total_assignments || 0}
+                            {sp.assignments_completed || 0}/{sp.total_assignments || 0}
                           </span>
                         </td>
                         <td className="py-3 px-2">
                           <span className="text-sm text-[var(--text-muted)]">
-                            {p?.trade_logs_count || 0}
+                            {sp.trade_logs_submitted || 0}
                           </span>
                         </td>
                         <td className="py-3 px-2">

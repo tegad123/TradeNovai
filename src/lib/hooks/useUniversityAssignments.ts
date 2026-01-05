@@ -6,8 +6,9 @@ import {
   getAssignmentsByCourse,
   getStudentSubmissions,
   getCourseSubmissions,
+  getStudentVisibleAssignments,
   createAssignment as createAssignmentUtil,
-  submitAssignment as submitAssignmentUtil,
+  submitAssignmentWithFile,
   gradeSubmission as gradeSubmissionUtil,
   type Assignment,
   type Submission
@@ -35,8 +36,15 @@ export function useUniversityAssignments(
     try {
       setLoading(true)
       
-      // Load assignments
-      const assignmentData = await getAssignmentsByCourse(courseId)
+      // Load assignments based on role
+      let assignmentData: Assignment[]
+      if (role === 'instructor') {
+        // Instructors see all assignments
+        assignmentData = await getAssignmentsByCourse(courseId)
+      } else {
+        // Students only see non-restricted or assigned assignments
+        assignmentData = await getStudentVisibleAssignments(courseId, user.id)
+      }
       setAssignments(assignmentData)
 
       // Load submissions based on role
@@ -67,6 +75,8 @@ export function useUniversityAssignments(
     due_date?: string
     points?: number
     type?: 'reflection' | 'trade_analysis' | 'quiz' | 'journal'
+    attachments?: string[]
+    is_restricted?: boolean
   }): Promise<Assignment | null> => {
     if (!courseId) return null
 
@@ -83,17 +93,18 @@ export function useUniversityAssignments(
   const submitAssignment = useCallback(async (
     assignmentId: string,
     content: string,
-    attachments: string[] = []
-  ): Promise<Submission | null> => {
-    if (!user) return null
+    fileUrl?: string
+  ): Promise<boolean> => {
+    if (!user) return false
 
-    const submission = await submitAssignmentUtil(assignmentId, user.id, content, attachments)
+    const submission = await submitAssignmentWithFile(assignmentId, user.id, content, fileUrl)
     
     if (submission) {
       await loadData()
+      return true
     }
 
-    return submission
+    return false
   }, [user, loadData])
 
   // Grade submission (instructor only)
@@ -148,7 +159,8 @@ export function useUniversityAssignments(
     gradeSubmission,
     getSubmissionForAssignment,
     getSubmissionsForAssignment,
-    refresh: loadData
+    refresh: loadData,
+    refetch: loadData
   }
 }
 

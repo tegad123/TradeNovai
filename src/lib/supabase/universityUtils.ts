@@ -36,6 +36,7 @@ export interface Module {
   description: string | null
   order: number
   is_published: boolean
+  is_restricted: boolean
   created_at: string
   lessons?: Lesson[]
 }
@@ -69,6 +70,8 @@ export interface Assignment {
   points: number
   type: 'reflection' | 'trade_analysis' | 'quiz' | 'journal'
   is_published: boolean
+  is_restricted: boolean
+  attachments: string[]
   created_at: string
 }
 
@@ -78,14 +81,28 @@ export interface Submission {
   student_id: string
   content: string
   attachments: string[]
+  file_url: string | null
   submitted_at: string
   grade: number | null
   feedback: string | null
   graded_at: string | null
+  graded_by: string | null
+  is_late: boolean
   status: 'pending' | 'submitted' | 'graded' | 'returned'
   // Joined data
   student_name?: string
   assignment_title?: string
+  assignment_due_date?: string
+}
+
+export interface SubmissionComment {
+  id: string
+  submission_id: string
+  user_id: string
+  content: string
+  created_at: string
+  // Joined data
+  user_name?: string
 }
 
 export interface MessageThread {
@@ -124,6 +141,7 @@ export interface UniversityTradeLog {
   id: string
   course_id: string
   student_id: string
+  user_id?: string  // Alias for student_id in some contexts
   trade_date: string
   symbol: string
   side: 'long' | 'short'
@@ -131,10 +149,14 @@ export interface UniversityTradeLog {
   exit_price: number
   pnl: number
   reflection: string
+  screenshot_url: string | null
   screenshots: string[]
   submitted_at: string
+  feedback: string | null
   instructor_feedback: string | null
   feedback_at: string | null
+  reviewed_at: string | null
+  reviewed_by: string | null
   // Joined data
   student_name?: string
 }
@@ -181,9 +203,6 @@ export async function createCourse(
   }
 ): Promise<Course | null> {
   const supabase = getClient()
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createCourse',message:'createCourse called',data:{hasClient:!!supabase,instructorIdLooksUuid:/^[0-9a-fA-F-]{20,}$/.test(instructorId),code:data.code},timestamp:Date.now(),sessionId:'debug-session',runId:'course-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   if (!supabase) throw new Error("Supabase client not initialized (missing env vars or client init failed).")
 
   // Generate access code
@@ -203,9 +222,6 @@ export async function createCourse(
     .single()
 
   if (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createCourse',message:'courses insert failed',data:{message:error.message,code:(error as any).code||null,details:(error as any).details||null,hint:(error as any).hint||null},timestamp:Date.now(),sessionId:'debug-session',runId:'course-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Error creating course:', error)
     throw new Error(`createCourse failed: ${error.message}`)
   }
@@ -217,10 +233,6 @@ export async function createCourse(
     role: 'instructor'
   })
   if (enrollError) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createCourse',message:'enroll instructor failed',data:{message:enrollError.message,code:(enrollError as any).code||null,details:(enrollError as any).details||null},timestamp:Date.now(),sessionId:'debug-session',runId:'course-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
-    // don't fail course creation, but surface in console
     console.error('Error enrolling instructor:', enrollError)
   }
 
@@ -447,10 +459,6 @@ export async function createModule(
   const supabase = getClient()
   if (!supabase) return null
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createModule',message:'insert module start',data:{courseId,title:data.title,hasDescription:!!data.description,order:data.order??0},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v5',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-
   const { data: module, error } = await supabase
     .from('modules')
     .insert({
@@ -464,23 +472,16 @@ export async function createModule(
     .single()
 
   if (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createModule',message:'insert module failed',data:{message:error.message,code:(error as any).code||null,details:(error as any).details||null,hint:(error as any).hint||null},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v5',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Error creating module:', error)
     throw new Error(`createModule failed: ${error.message}`)
   }
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createModule',message:'insert module success',data:{moduleId:(module as any)?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v5',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
 
   return module
 }
 
 export async function updateModule(
   moduleId: string,
-  data: Partial<{ title: string; description: string; order: number; is_published: boolean }>
+  data: Partial<{ title: string; description: string; order: number; is_published: boolean; is_restricted: boolean }>
 ): Promise<boolean> {
   const supabase = getClient()
   if (!supabase) return false
@@ -603,14 +604,12 @@ export async function createAssignment(
     due_date?: string
     points?: number
     type?: 'reflection' | 'trade_analysis' | 'quiz' | 'journal'
+    attachments?: string[]
+    is_restricted?: boolean
   }
 ): Promise<Assignment | null> {
   const supabase = getClient()
   if (!supabase) return null
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createAssignment',message:'insert assignment start',data:{courseId,title:data.title,hasDueDate:!!data.due_date,points:data.points??100,type:data.type??'reflection'},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
 
   const { data: assignment, error } = await supabase
     .from('assignments')
@@ -621,22 +620,17 @@ export async function createAssignment(
       due_date: data.due_date || null,
       points: data.points || 100,
       type: data.type || 'reflection',
+      attachments: data.attachments || [],
+      is_restricted: data.is_restricted || false,
       is_published: false
     })
     .select()
     .single()
 
   if (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createAssignment',message:'insert assignment failed',data:{message:error.message,code:(error as any).code||null,details:(error as any).details||null,hint:(error as any).hint||null},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     console.error('Error creating assignment:', error)
     throw new Error(`createAssignment failed: ${error.message}`)
   }
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'universityUtils.ts:createAssignment',message:'insert assignment success',data:{assignmentId:(assignment as any)?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'assignments-create-v2',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
 
   return assignment
 }
@@ -1340,5 +1334,472 @@ export async function getCourseStudents(courseId: string): Promise<UserProfile[]
     .in('id', userIds)
 
   return profiles || []
+}
+
+export async function removeLessonVideo(lessonId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // 1. Get current video URL
+  const { data: lesson } = await supabase
+    .from('lessons')
+    .select('video_url')
+    .eq('id', lessonId)
+    .single()
+
+  if (!lesson?.video_url) return true
+
+  // 2. Extract path from URL (if it's a Supabase storage URL)
+  // Format: .../storage/v1/object/public/course-assets/e469...
+  const bucketPart = '/course-assets/'
+  const bucketIndex = lesson.video_url.indexOf(bucketPart)
+  if (bucketIndex !== -1) {
+    const filePath = lesson.video_url.substring(bucketIndex + bucketPart.length)
+    
+    // 3. Delete from storage
+    const { deleteFile } = await import('./storageUtils')
+    await deleteFile(filePath)
+  }
+
+  // 4. Update database
+  const { error } = await supabase
+    .from('lessons')
+    .update({ video_url: null })
+    .eq('id', lessonId)
+
+  if (error) {
+    console.error('Error removing lesson video:', error)
+    return false
+  }
+
+  return true
+}
+
+export async function getModuleAssignments(moduleId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('module_assignments')
+    .select('user_id')
+    .eq('module_id', moduleId)
+
+  if (error) {
+    console.error('Error fetching module assignments:', error)
+    return []
+  }
+
+  return data.map(a => a.user_id)
+}
+
+export async function assignModuleToStudent(moduleId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('module_assignments')
+    .upsert({ module_id: moduleId, user_id: userId }, { onConflict: 'module_id,user_id' })
+
+  if (error) {
+    console.error('Error assigning module:', error)
+    return false
+  }
+
+  return true
+}
+
+export async function unassignModuleFromStudent(moduleId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('module_assignments')
+    .delete()
+    .eq('module_id', moduleId)
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('Error unassigning module:', error)
+    return false
+  }
+
+  return true
+}
+
+// ============================================
+// Assignment Targeting (Per-Student Assignments)
+// ============================================
+
+export async function updateAssignment(
+  assignmentId: string,
+  data: Partial<{
+    title: string
+    description: string
+    due_date: string
+    points: number
+    type: 'reflection' | 'trade_analysis' | 'quiz' | 'journal'
+    is_published: boolean
+    is_restricted: boolean
+    attachments: string[]
+  }>
+): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('assignments')
+    .update(data)
+    .eq('id', assignmentId)
+
+  if (error) {
+    console.error('Error updating assignment:', error)
+    return false
+  }
+
+  return true
+}
+
+export async function getAssignmentTargets(assignmentId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('assignment_targets')
+    .select('user_id')
+    .eq('assignment_id', assignmentId)
+
+  if (error) {
+    console.error('Error fetching assignment targets:', error)
+    return []
+  }
+
+  return data.map(t => t.user_id)
+}
+
+export async function assignAssignmentToStudent(assignmentId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('assignment_targets')
+    .upsert({ assignment_id: assignmentId, user_id: userId }, { onConflict: 'assignment_id,user_id' })
+
+  if (error) {
+    console.error('Error assigning assignment to student:', error)
+    return false
+  }
+
+  return true
+}
+
+export async function unassignAssignmentFromStudent(assignmentId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('assignment_targets')
+    .delete()
+    .eq('assignment_id', assignmentId)
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('Error unassigning assignment from student:', error)
+    return false
+  }
+
+  return true
+}
+
+// ============================================
+// Assignment Submissions with File Upload
+// ============================================
+
+export async function submitAssignmentWithFile(
+  assignmentId: string,
+  studentId: string,
+  content: string,
+  fileUrl?: string
+): Promise<Submission | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  // Get assignment to check due date for late submission
+  const { data: assignment } = await supabase
+    .from('assignments')
+    .select('due_date')
+    .eq('id', assignmentId)
+    .single()
+
+  const now = new Date()
+  const isLate = assignment?.due_date ? new Date(assignment.due_date) < now : false
+
+  const { data, error } = await supabase
+    .from('submissions')
+    .upsert({
+      assignment_id: assignmentId,
+      student_id: studentId,
+      content,
+      file_url: fileUrl || null,
+      submitted_at: now.toISOString(),
+      status: 'submitted',
+      is_late: isLate
+    }, {
+      onConflict: 'assignment_id,student_id'
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error submitting assignment:', error)
+    return null
+  }
+
+  return data
+}
+
+export async function getStudentVisibleAssignments(
+  courseId: string,
+  studentId: string
+): Promise<Assignment[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  // Get all assignments for the course
+  const { data: allAssignments, error } = await supabase
+    .from('assignments')
+    .select('*')
+    .eq('course_id', courseId)
+    .order('due_date', { ascending: true })
+
+  if (error || !allAssignments) {
+    console.error('Error fetching assignments:', error)
+    return []
+  }
+
+  // Get assignment targets for restricted assignments
+  const restrictedIds = allAssignments.filter(a => a.is_restricted).map(a => a.id)
+  
+  if (restrictedIds.length === 0) {
+    return allAssignments
+  }
+
+  const { data: targets } = await supabase
+    .from('assignment_targets')
+    .select('assignment_id')
+    .eq('user_id', studentId)
+    .in('assignment_id', restrictedIds)
+
+  const assignedRestrictedIds = new Set(targets?.map(t => t.assignment_id) || [])
+
+  // Filter: include unrestricted OR student is assigned
+  return allAssignments.filter(a => 
+    !a.is_restricted || assignedRestrictedIds.has(a.id)
+  )
+}
+
+// ============================================
+// Submission Comments
+// ============================================
+
+export async function getSubmissionComments(submissionId: string): Promise<SubmissionComment[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('submission_comments')
+    .select('*')
+    .eq('submission_id', submissionId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching submission comments:', error)
+    return []
+  }
+
+  // Get user names
+  const comments = await Promise.all(
+    data.map(async (c) => {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('id', c.user_id)
+        .single()
+
+      return {
+        ...c,
+        user_name: profile?.full_name || 'User'
+      }
+    })
+  )
+
+  return comments
+}
+
+export async function addSubmissionComment(
+  submissionId: string,
+  userId: string,
+  content: string
+): Promise<SubmissionComment | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('submission_comments')
+    .insert({
+      submission_id: submissionId,
+      user_id: userId,
+      content
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error adding submission comment:', error)
+    return null
+  }
+
+  return data
+}
+
+// ============================================
+// Trade Log Comments
+// ============================================
+
+export interface TradeLogComment {
+  id: string
+  trade_log_id: string
+  user_id: string
+  content: string
+  created_at: string
+  user_name?: string
+}
+
+export async function getTradeLogComments(tradeLogId: string): Promise<TradeLogComment[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('trade_log_comments')
+    .select('*')
+    .eq('trade_log_id', tradeLogId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching trade log comments:', error)
+    return []
+  }
+
+  const comments = await Promise.all(
+    data.map(async (c) => {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('id', c.user_id)
+        .single()
+
+      return {
+        ...c,
+        user_name: profile?.full_name || 'User'
+      }
+    })
+  )
+
+  return comments
+}
+
+export async function addTradeLogComment(
+  tradeLogId: string,
+  userId: string,
+  content: string
+): Promise<TradeLogComment | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('trade_log_comments')
+    .insert({
+      trade_log_id: tradeLogId,
+      user_id: userId,
+      content
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error adding trade log comment:', error)
+    return null
+  }
+
+  return data
+}
+
+// Update trade log with screenshot and enhanced feedback
+export async function submitTradeLogWithScreenshot(
+  courseId: string,
+  studentId: string,
+  data: {
+    trade_date: string
+    symbol: string
+    side: 'long' | 'short'
+    entry_price: number
+    exit_price: number
+    pnl: number
+    reflection: string
+    screenshot_url?: string
+    screenshots?: string[]
+  }
+): Promise<UniversityTradeLog | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const { data: log, error } = await supabase
+    .from('university_trade_logs')
+    .insert({
+      course_id: courseId,
+      student_id: studentId,
+      trade_date: data.trade_date,
+      symbol: data.symbol,
+      side: data.side,
+      entry_price: data.entry_price,
+      exit_price: data.exit_price,
+      pnl: data.pnl,
+      reflection: data.reflection,
+      screenshot_url: data.screenshot_url || null,
+      screenshots: data.screenshots || []
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error submitting trade log:', error)
+    return null
+  }
+
+  return log
+}
+
+// ============================================
+// Course Instructor Helper
+// ============================================
+
+export async function getCourseInstructor(courseId: string): Promise<UserProfile | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const { data: course } = await supabase
+    .from('courses')
+    .select('instructor_id')
+    .eq('id', courseId)
+    .single()
+
+  if (!course) return null
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('id', course.instructor_id)
+    .single()
+
+  return profile
 }
 

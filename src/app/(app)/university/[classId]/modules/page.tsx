@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { useParams } from "next/navigation"
 import {
   ChevronDown,
@@ -12,6 +12,10 @@ import {
   Upload,
   Plus,
   Loader2,
+  Trash2,
+  Users,
+  Settings2,
+  ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
@@ -28,7 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { uploadLessonVideo } from "@/lib/supabase/storageUtils"
-import type { Lesson } from "@/lib/supabase/universityUtils"
+import { getCourseStudents, type Lesson, type UserProfile } from "@/lib/supabase/universityUtils"
+import { Switch } from "@/components/ui/switch"
 
 export default function ModulesPage() {
   const params = useParams()
@@ -37,6 +42,7 @@ export default function ModulesPage() {
   const [expandedModules, setExpandedModules] = useState<string[]>([])
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null)
   const [uploadingVideo, setUploadingVideo] = useState(false)
+  const [removingVideo, setRemovingVideo] = useState(false)
   const [markingComplete, setMarkingComplete] = useState<string | null>(null)
   const [createModuleOpen, setCreateModuleOpen] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState("")
@@ -46,7 +52,20 @@ export default function ModulesPage() {
   const [createLessonModuleId, setCreateLessonModuleId] = useState<string | null>(null)
   const [newLessonTitle, setNewLessonTitle] = useState("")
   const [creatingLesson, setCreatingLesson] = useState(false)
+  const [manageAccessOpen, setManageAccessOpen] = useState(false)
+  const [accessModuleId, setAccessModuleId] = useState<string | null>(null)
+  const [courseStudents, setCourseStudents] = useState<UserProfile[]>([])
+  const [assignedStudentIds, setAssignedStudentIds] = useState<string[]>([])
+  const [updatingAccess, setUpdatingAccess] = useState(false)
+  const [videoCompleted, setVideoCompleted] = useState(false)
+  
+  // Demo students for easy testing
+  const DEMO_STUDENTS: UserProfile[] = [
+    { id: '00000000-0000-0000-0000-000000000001', full_name: 'Alex (Pro Student)', avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex' },
+    { id: '00000000-0000-0000-0000-000000000002', full_name: 'Sarah (Newbie Student)', avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah' }
+  ]
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   const {
     modules,
@@ -57,10 +76,99 @@ export default function ModulesPage() {
     markLessonComplete,
     updateLesson,
     createModule,
-    createLesson
+    updateModule,
+    createLesson,
+    removeLessonVideo,
+    assignModule,
+    unassignModule
   } = useUniversityModules(currentCourse?.id || null)
 
   const isInstructor = currentRole === 'instructor'
+
+  // Compute next lesson
+  const getNextLesson = useCallback(() => {
+    if (!selectedLesson) return null
+    
+    // Flatten all lessons across modules
+    const allLessons: { lesson: Lesson; moduleIndex: number }[] = []
+    modules.forEach((mod, moduleIndex) => {
+      mod.lessons?.forEach(lesson => {
+        allLessons.push({ lesson, moduleIndex })
+      })
+    })
+    
+    const currentIndex = allLessons.findIndex(l => l.lesson.id === selectedLesson.id)
+    if (currentIndex === -1 || currentIndex === allLessons.length - 1) return null
+    
+    return allLessons[currentIndex + 1].lesson
+  }, [selectedLesson, modules])
+
+  const nextLesson = getNextLesson()
+
+  // Persist video position to localStorage
+  const saveVideoPosition = useCallback(() => {
+    if (videoRef.current && selectedLesson) {
+      const currentTime = videoRef.current.currentTime
+      if (currentTime > 0) {
+        localStorage.setItem(`video-position-${selectedLesson.id}`, String(currentTime))
+      }
+    }
+  }, [selectedLesson])
+
+  // Restore video position from localStorage
+  const restoreVideoPosition = useCallback(() => {
+    if (videoRef.current && selectedLesson) {
+      const savedTime = localStorage.getItem(`video-position-${selectedLesson.id}`)
+      if (savedTime) {
+        videoRef.current.currentTime = parseFloat(savedTime)
+      }
+    }
+  }, [selectedLesson])
+
+  // Handle video ended - auto-complete lesson
+  const handleVideoEnded = useCallback(async () => {
+    if (selectedLesson && !selectedLesson.is_completed) {
+      setVideoCompleted(true)
+      // Clear saved position since video is complete
+      localStorage.removeItem(`video-position-${selectedLesson.id}`)
+      // Auto-mark as complete
+      await markLessonComplete(selectedLesson.id, true)
+      setSelectedLesson(prev => prev ? { ...prev, is_completed: true } : null)
+    }
+  }, [selectedLesson, markLessonComplete])
+
+  // Update video position periodically
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const handleTimeUpdate = () => saveVideoPosition()
+    const handleLoadedData = () => restoreVideoPosition()
+    
+    video.addEventListener('timeupdate', handleTimeUpdate)
+    video.addEventListener('loadeddata', handleLoadedData)
+    
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate)
+      video.removeEventListener('loadeddata', handleLoadedData)
+    }
+  }, [saveVideoPosition, restoreVideoPosition])
+
+  // Reset video completed state when lesson changes
+  useEffect(() => {
+    setVideoCompleted(false)
+  }, [selectedLesson?.id])
+
+  const goToNextLesson = () => {
+    if (nextLesson) {
+      setSelectedLesson(nextLesson)
+      // Expand the module containing the next lesson if not already
+      const moduleWithNextLesson = modules.find(m => m.lessons?.some(l => l.id === nextLesson.id))
+      if (moduleWithNextLesson && !expandedModules.includes(moduleWithNextLesson.id)) {
+        setExpandedModules(prev => [...prev, moduleWithNextLesson.id])
+      }
+    }
+  }
 
   const toggleModule = (moduleId: string) => {
     setExpandedModules(prev =>
@@ -80,6 +188,98 @@ export default function ModulesPage() {
     }
     
     setMarkingComplete(null)
+  }
+
+  const handleRemoveVideo = async () => {
+    if (!selectedLesson) return
+    if (!confirm("Are you sure you want to remove this video?")) return
+
+    setRemovingVideo(true)
+    try {
+      const success = await removeLessonVideo(selectedLesson.id)
+      if (success) {
+        setSelectedLesson(prev => prev ? { ...prev, video_url: null } : null)
+      } else {
+        alert("Failed to remove video")
+      }
+    } catch (error) {
+      console.error('Remove video error:', error)
+      alert("Failed to remove video")
+    } finally {
+      setRemovingVideo(false)
+    }
+  }
+
+  const handleOpenAccess = async (moduleId: string) => {
+    setAccessModuleId(moduleId)
+    setManageAccessOpen(true)
+    
+    // Fetch students and current assignments
+    if (currentCourse?.id) {
+      const realStudents = await getCourseStudents(currentCourse.id)
+      
+      // Merge with demo students if they aren't already there
+      const allStudents = [...realStudents]
+      DEMO_STUDENTS.forEach(demo => {
+        if (!allStudents.some(s => s.id === demo.id)) {
+          allStudents.push(demo)
+        }
+      })
+      
+      setCourseStudents(allStudents)
+      
+      const { getModuleAssignments: getAssignments } = await import("@/lib/supabase/universityUtils")
+      const assignments = await getAssignments(moduleId)
+      setAssignedStudentIds(assignments)
+    }
+  }
+
+  const handleToggleAssignment = async (studentId: string) => {
+    if (!accessModuleId || !currentCourse) return
+    
+    const isAssigned = assignedStudentIds.includes(studentId)
+    const isDemo = DEMO_STUDENTS.some(d => d.id === studentId)
+    setUpdatingAccess(true)
+    
+    try {
+      // Auto-enroll demo students if needed
+      if (isDemo && !isAssigned) {
+        const { getUserRoleInCourse } = await import("@/lib/supabase/universityUtils")
+        // Check if demo user is actually enrolled
+        const role = await getUserRoleInCourse(studentId, currentCourse.id)
+        if (!role) {
+          // Manually enroll demo user via direct utility
+          const { createClientSafe } = await import("@/lib/supabase/browser")
+          const supabase = createClientSafe()
+          await supabase?.from('course_enrollments').insert({
+            user_id: studentId,
+            course_id: currentCourse.id,
+            role: 'student'
+          })
+        }
+      }
+
+      if (isAssigned) {
+        const success = await unassignModule(accessModuleId, studentId)
+        if (success) {
+          setAssignedStudentIds(prev => prev.filter(id => id !== studentId))
+        }
+      } else {
+        const success = await assignModule(accessModuleId, studentId)
+        if (success) {
+          setAssignedStudentIds(prev => [...prev, studentId])
+        }
+      }
+    } catch (error) {
+      console.error('Toggle assignment error:', error)
+    } finally {
+      setUpdatingAccess(false)
+    }
+  }
+
+  const handleToggleRestricted = async (restricted: boolean) => {
+    if (!accessModuleId) return
+    await updateModule(accessModuleId, { is_restricted: restricted } as any)
   }
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,9 +313,6 @@ export default function ModulesPage() {
     if (!currentCourse?.id) return
 
     setCreatingModule(true)
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleCreateModule',message:'submit create module',data:{courseId:currentCourse.id,title:newModuleTitle.trim(),hasDescription:!!newModuleDescription.trim()},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v5',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
 
     try {
       const result = await createModule({
@@ -123,10 +320,6 @@ export default function ModulesPage() {
         description: newModuleDescription.trim() || undefined,
         order: modules.length,
       })
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleCreateModule',message:'create module result',data:{success:!!result,moduleId:result?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v5',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
 
       if (!result) {
         alert("Failed to create module. This is usually caused by missing Supabase tables (run 003_university_tables.sql) or RLS blocking inserts.")
@@ -137,9 +330,6 @@ export default function ModulesPage() {
       setNewModuleTitle("")
       setNewModuleDescription("")
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleCreateModule',message:'create module threw',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v5',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       alert(`Error creating module: ${String(err)}`)
     } finally {
       setCreatingModule(false)
@@ -160,19 +350,12 @@ export default function ModulesPage() {
     const lessonCount = module?.lessons?.length || 0
 
     setCreatingLesson(true)
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleCreateLesson',message:'submit create lesson',data:{moduleId:createLessonModuleId,title:newLessonTitle.trim(),order:lessonCount},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-lesson-v1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
 
     try {
       const lesson = await createLesson(createLessonModuleId, {
         title: newLessonTitle.trim(),
         order: lessonCount,
       })
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleCreateLesson',message:'create lesson result',data:{success:!!lesson,lessonId:lesson?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-lesson-v1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
 
       if (!lesson) {
         alert("Failed to create lesson. This is usually caused by missing Supabase tables (run 003_university_tables.sql) or RLS blocking inserts.")
@@ -225,12 +408,7 @@ export default function ModulesPage() {
             {isInstructor && (
               <Button
                 variant="glass-theme"
-                onClick={() => {
-                  setCreateModuleOpen(true)
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:AddModuleButton',message:'open create module dialog',data:{courseId:currentCourse?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'modules-create-v4',hypothesisId:'H1'})}).catch(()=>{});
-                  // #endregion
-                }}
+                onClick={() => setCreateModuleOpen(true)}
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Module
@@ -273,11 +451,29 @@ export default function ModulesPage() {
                         )}
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="font-medium text-white">{module.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-white">{module.title}</h3>
+                          {module.is_restricted && (
+                            <Users className="w-3 h-3 text-[hsl(var(--theme-primary))]" />
+                          )}
+                        </div>
                         <p className="text-xs text-[var(--text-muted)]">
                           {completedCount}/{totalCount} lessons
                         </p>
                       </div>
+                      {isInstructor && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-8 h-8 rounded-lg hover:bg-white/10"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenAccess(module.id)
+                          }}
+                        >
+                          <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
+                        </Button>
+                      )}
                       {completedCount === totalCount && totalCount > 0 && (
                         <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
                       )}
@@ -347,7 +543,15 @@ export default function ModulesPage() {
                   <div className="space-y-6">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h2 className="text-xl font-bold text-white">{selectedLesson.title}</h2>
+                        <div className="flex items-center gap-3">
+                          <h2 className="text-xl font-bold text-white">{selectedLesson.title}</h2>
+                          {selectedLesson.is_completed && (
+                            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-green-500/20">
+                              <CheckCircle2 className="w-4 h-4 text-green-400" />
+                              <span className="text-xs font-medium text-green-400">Completed</span>
+                            </div>
+                          )}
+                        </div>
                         {selectedLesson.duration_minutes && (
                           <p className="text-sm text-[var(--text-muted)] flex items-center gap-1 mt-1">
                             <Clock className="w-4 h-4" />
@@ -355,35 +559,61 @@ export default function ModulesPage() {
                           </p>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleMarkComplete(selectedLesson.id, selectedLesson.is_completed || false)}
-                        disabled={markingComplete === selectedLesson.id}
-                        className={cn(
-                          "px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2",
-                          selectedLesson.is_completed
-                            ? "bg-green-500/20 text-green-400"
-                            : "bg-theme-gradient text-white hover:opacity-90"
-                        )}
-                      >
-                        {markingComplete === selectedLesson.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-4 h-4" />
-                        )}
-                        {selectedLesson.is_completed ? "Completed" : "Mark Complete"}
-                      </button>
+                      {/* Only show Mark Complete button to instructors */}
+                      {isInstructor && (
+                        <button
+                          onClick={() => handleMarkComplete(selectedLesson.id, selectedLesson.is_completed || false)}
+                          disabled={markingComplete === selectedLesson.id}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2",
+                            selectedLesson.is_completed
+                              ? "bg-green-500/20 text-green-400"
+                              : "bg-theme-gradient text-white hover:opacity-90"
+                          )}
+                        >
+                          {markingComplete === selectedLesson.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4" />
+                          )}
+                          {selectedLesson.is_completed ? "Completed" : "Mark Complete"}
+                        </button>
+                      )}
                     </div>
 
                     {/* Video player or placeholder */}
-                    <div className="aspect-video rounded-xl bg-black/50 flex items-center justify-center overflow-hidden">
+                    <div className="relative group aspect-video rounded-xl bg-black/50 flex items-center justify-center overflow-hidden">
                       {selectedLesson.video_url ? (
-                        <video
-                          controls
-                          className="w-full h-full"
-                          src={selectedLesson.video_url}
-                        >
-                          Your browser does not support the video tag.
-                        </video>
+                        <>
+                          <video
+                            ref={videoRef}
+                            controls
+                            className="w-full h-full"
+                            src={selectedLesson.video_url}
+                            onEnded={handleVideoEnded}
+                          >
+                            Your browser does not support the video tag.
+                          </video>
+                          {/* Only show remove button to instructors */}
+                          {isInstructor && (
+                            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={handleRemoveVideo}
+                                disabled={removingVideo}
+                                className="bg-red-500/80 hover:bg-red-500 backdrop-blur-sm"
+                              >
+                                {removingVideo ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                )}
+                                Remove Video
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       ) : (
                         <div className="text-center">
                           {isInstructor ? (
@@ -419,6 +649,20 @@ export default function ModulesPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* Next Lesson button - shows after completion or if already completed */}
+                    {(selectedLesson.is_completed || videoCompleted) && nextLesson && (
+                      <div className="flex justify-end">
+                        <Button
+                          variant="glass-theme"
+                          onClick={goToNextLesson}
+                          className="group"
+                        >
+                          Next: {nextLesson.title}
+                          <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                        </Button>
+                      </div>
+                    )}
 
                     {/* Lesson content */}
                     <div className="prose prose-invert max-w-none">
@@ -517,6 +761,70 @@ export default function ModulesPage() {
             >
               {creatingLesson ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Create lesson
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={manageAccessOpen} onOpenChange={setManageAccessOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage Access</DialogTitle>
+            <DialogDescription>
+              Control which students can access this module.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-6">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Restrict Access</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Only assigned students will see this module.
+                </div>
+              </div>
+              <Switch
+                checked={modules.find(m => m.id === accessModuleId)?.is_restricted || false}
+                onCheckedChange={handleToggleRestricted}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-white px-1">Assign Students</h4>
+              <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {courseStudents.length > 0 ? (
+                  courseStudents.map(student => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-theme-gradient flex items-center justify-center text-xs font-bold text-white uppercase">
+                          {student.full_name?.charAt(0) || student.id.charAt(0)}
+                        </div>
+                        <span className="text-sm text-white font-medium">
+                          {student.full_name || 'Student'}
+                        </span>
+                      </div>
+                      <Switch
+                        disabled={updatingAccess}
+                        checked={assignedStudentIds.includes(student.id)}
+                        onCheckedChange={() => handleToggleAssignment(student.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-4">
+                    No students enrolled yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button variant="glass-theme" className="w-full" onClick={() => setManageAccessOpen(false)}>
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

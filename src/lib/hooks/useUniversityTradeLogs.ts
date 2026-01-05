@@ -5,7 +5,7 @@ import { useSupabaseAuthContext } from '@/lib/contexts/SupabaseAuthContext'
 import {
   getStudentTradeLogs,
   getTradeLogsByCourse,
-  submitTradeLog as submitTradeLogUtil,
+  submitTradeLogWithScreenshot,
   addFeedbackToTradeLog as addFeedbackUtil,
   type UniversityTradeLog
 } from '@/lib/supabase/universityUtils'
@@ -53,25 +53,31 @@ export function useUniversityTradeLogs(
   }, [loadTradeLogs])
 
   // Submit a trade log (student only)
-  const submitTradeLog = useCallback(async (data: {
-    trade_date: string
-    symbol: string
-    side: 'long' | 'short'
-    entry_price: number
-    exit_price: number
-    pnl: number
-    reflection: string
-    screenshots?: string[]
-  }): Promise<UniversityTradeLog | null> => {
-    if (!user || !courseId) return null
+  // Simplified interface: just date, reflection, and optional screenshot
+  const submitTradeLog = useCallback(async (
+    tradeDate: string,
+    reflection: string,
+    screenshotUrl?: string
+  ): Promise<boolean> => {
+    if (!user || !courseId) return false
 
-    const log = await submitTradeLogUtil(courseId, user.id, data)
+    const log = await submitTradeLogWithScreenshot(courseId, user.id, {
+      trade_date: tradeDate,
+      symbol: 'N/A',  // Default for reflection-only logs
+      side: 'long',
+      entry_price: 0,
+      exit_price: 0,
+      pnl: 0,
+      reflection,
+      screenshot_url: screenshotUrl
+    })
     
     if (log) {
       await loadTradeLogs()
+      return true
     }
 
-    return log
+    return false
   }, [user, courseId, loadTradeLogs])
 
   // Add feedback to a trade log (instructor only)
@@ -106,6 +112,7 @@ export function useUniversityTradeLogs(
   return {
     tradeLogs,
     loading,
+    isLoading: loading,
     error,
     stats,
     submitTradeLog,

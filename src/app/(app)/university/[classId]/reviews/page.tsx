@@ -38,8 +38,8 @@ export default function ReviewsPage({ params }: PageProps) {
   const { 
     tradeLogs, 
     isLoading: logsLoading, 
-    addFeedbackToTradeLog 
-  } = useUniversityTradeLogs(classId)
+    addFeedback 
+  } = useUniversityTradeLogs(classId, currentRole)
 
   const [activeTab, setActiveTab] = useState<ReviewTab>('assignments')
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
@@ -97,7 +97,7 @@ export default function ReviewsPage({ params }: PageProps) {
     if (!selectedTradeLog || !feedback.trim()) return
 
     setIsSubmitting(true)
-    const success = await addFeedbackToTradeLog(selectedTradeLog.id, feedback.trim())
+    const success = await addFeedback(selectedTradeLog.id, feedback.trim())
     
     if (success) {
       setSelectedTradeLog(null)
@@ -379,11 +379,22 @@ export default function ReviewsPage({ params }: PageProps) {
               </div>
 
               {/* Screenshots */}
-              {selectedTradeLog.screenshot_urls && selectedTradeLog.screenshot_urls.length > 0 && (
+              {(selectedTradeLog.screenshot_url || (selectedTradeLog.screenshot_urls && selectedTradeLog.screenshot_urls.length > 0)) && (
                 <div>
                   <h3 className="text-sm font-medium text-white mb-2">Screenshots</h3>
                   <div className="flex gap-2 flex-wrap">
-                    {selectedTradeLog.screenshot_urls.map((url, i) => (
+                    {selectedTradeLog.screenshot_url && (
+                      <a
+                        href={selectedTradeLog.screenshot_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg bg-white/5 border border-white/10 overflow-hidden hover:border-[hsl(var(--theme-primary))] transition-colors"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={selectedTradeLog.screenshot_url} alt="Trade screenshot" className="max-w-xs h-auto object-cover" />
+                      </a>
+                    )}
+                    {selectedTradeLog.screenshot_urls?.map((url, i) => (
                       <a
                         key={i}
                         href={url}
