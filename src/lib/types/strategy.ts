@@ -38,13 +38,27 @@ export interface Strategy {
   }
 }
 
+// For creating rules without ID
+export interface CreateStrategyRule {
+  text: string
+  condition: RuleCondition
+  order: number
+}
+
+// For creating rule groups without ID
+export interface CreateStrategyRuleGroup {
+  title: string
+  order: number
+  rules: CreateStrategyRule[]
+}
+
 export interface CreateStrategyPayload {
   name: string
   description: string
   color: string
   icon?: string
   photoUrl?: string
-  ruleGroups: Omit<StrategyRuleGroup, "id">[]
+  ruleGroups: CreateStrategyRuleGroup[]
 }
 
 export interface UpdateStrategyPayload extends Partial<CreateStrategyPayload> {

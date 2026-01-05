@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { useAuth } from "./useAuth"
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import {
   Strategy,
   CreateStrategyPayload,
@@ -11,13 +11,13 @@ import {
   createStrategy,
   updateStrategy,
   deleteStrategy,
-} from "../firebase/strategyUtils"
+} from "../supabase/strategyUtils"
 
 // LocalStorage key for strategies (fallback for unauthenticated users)
 const LOCAL_STORAGE_KEY = "tradenova-strategies"
 
 export function useStrategies() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useSupabaseAuthContext()
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -33,7 +33,7 @@ export function useStrategies() {
     try {
       if (user) {
         // Load from Firestore
-        const userStrategies = await listStrategies(user.uid)
+        const userStrategies = await listStrategies(user.id)
         setStrategies(userStrategies)
       } else {
         // Load from localStorage
@@ -77,7 +77,7 @@ export function useStrategies() {
 
       if (user) {
         // Save to Firestore
-        newStrategy = await createStrategy(user.uid, payload)
+        newStrategy = await createStrategy(user.id, payload)
       } else {
         // Save to localStorage
         try {
@@ -136,16 +136,35 @@ export function useStrategies() {
       let success = false
 
       if (user) {
-        success = await updateStrategy(user.uid, strategyId, payload)
+        success = await updateStrategy(user.id, strategyId, payload)
       } else {
         try {
           const updatedStrategies = strategies.map((s) => {
             if (s.id === strategyId) {
-              return {
+              // Extract ruleGroups separately to handle conversion
+              const { ruleGroups: payloadRuleGroups, ...restPayload } = payload
+              
+              const updated: Strategy = {
                 ...s,
-                ...payload,
+                ...restPayload,
                 updatedAt: new Date().toISOString(),
               }
+              
+              // Convert ruleGroups to full StrategyRuleGroup with IDs
+              if (payloadRuleGroups) {
+                updated.ruleGroups = payloadRuleGroups.map((group, gi) => ({
+                  id: `group-${Date.now()}-${gi}`,
+                  title: group.title,
+                  order: gi,
+                  rules: group.rules.map((rule, ri) => ({
+                    id: `rule-${Date.now()}-${gi}-${ri}`,
+                    text: rule.text,
+                    condition: rule.condition,
+                    order: ri,
+                  })),
+                }))
+              }
+              return updated
             }
             return s
           })
@@ -175,7 +194,7 @@ export function useStrategies() {
       let success = false
 
       if (user) {
-        success = await deleteStrategy(user.uid, strategyId)
+        success = await deleteStrategy(user.id, strategyId)
       } else {
         try {
           const updatedStrategies = strategies.filter((s) => s.id !== strategyId)

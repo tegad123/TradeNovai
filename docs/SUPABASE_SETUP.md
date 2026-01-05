@@ -70,15 +70,44 @@ ANTHROPIC_API_KEY=your-anthropic-key
 
 3. Save
 
-## Step 7: Run the Chat Tables Migration (Optional)
+## Step 7: Run Database Migrations
 
-If you want to persist chat messages in Supabase:
+Run the following migrations in your Supabase SQL Editor:
 
 1. Go to **SQL Editor** in your Supabase dashboard
-2. Copy the contents of `supabase/migrations/001_chat_tables.sql`
-3. Paste and run it
+2. Run migrations in order:
+   - `supabase/migrations/001_chat_tables.sql` - Chat persistence tables
+   - `supabase/migrations/002_app_tables.sql` - Trade journal tables
+   - `supabase/migrations/003_university_tables.sql` - University/LMS tables
 
-## Step 8: Test Locally
+## Step 8: Set Up Storage Bucket for Course Assets
+
+1. In Supabase dashboard, go to **Storage**
+2. Click **New bucket**
+3. Create a bucket called `course-assets`
+4. Set access to **Public** (for video/image serving) or **Private** (requires signed URLs)
+5. Add the following storage policies:
+
+```sql
+-- Allow authenticated users to upload files
+CREATE POLICY "Authenticated users can upload" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'course-assets' AND auth.role() = 'authenticated');
+
+-- Allow public read access to files
+CREATE POLICY "Public can view course assets" ON storage.objects
+  FOR SELECT USING (bucket_id = 'course-assets');
+
+-- Allow users to delete their own files
+CREATE POLICY "Users can delete own files" ON storage.objects
+  FOR DELETE USING (bucket_id = 'course-assets' AND auth.uid()::text = (storage.foldername(name))[1]);
+```
+
+The storage bucket is used for:
+- **videos/** - Lesson videos uploaded by instructors
+- **screenshots/** - Trade log screenshots uploaded by students
+- **attachments/** - Assignment submission attachments
+
+## Step 9: Test Locally
 
 1. Start the development server:
    ```bash

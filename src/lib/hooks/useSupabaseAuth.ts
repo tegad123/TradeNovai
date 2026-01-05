@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { createClientSafe } from "@/lib/supabase/browser"
-import { User, Session } from "@supabase/supabase-js"
+import { User, Session, AuthChangeEvent } from "@supabase/supabase-js"
 
 export function useSupabaseAuth() {
   const [user, setUser] = useState<User | null>(null)
@@ -36,7 +36,7 @@ export function useSupabaseAuth() {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_event: AuthChangeEvent, session: Session | null) => {
         setSession(session)
         setUser(session?.user ?? null)
         setLoading(false)

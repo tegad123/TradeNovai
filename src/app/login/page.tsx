@@ -1,12 +1,11 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
-import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
-export default function LoginPage() {
+function LoginContent() {
   const { user, loading, signInWithGoogle } = useSupabaseAuthContext()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -101,3 +100,16 @@ export default function LoginPage() {
   )
 }
 
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[var(--theme-bg-color)]">
+          <div className="animate-pulse text-[var(--text-muted)]">Loading...</div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
+  )
+}

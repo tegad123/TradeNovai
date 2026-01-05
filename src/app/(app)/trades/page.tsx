@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Plus, Filter, ChevronDown, ChevronUp, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageContainer } from "@/components/layout/PageContainer"
@@ -12,10 +13,11 @@ import {
   CalendarSidebar,
   DayAccordion,
 } from "@/components/trades"
-import { TimeframeOption, DayData } from "@/lib/types/trades"
-import { mockDayViewData } from "@/lib/mockData/dayViewData"
+import { TimeframeOption, DayData, CalendarDay } from "@/lib/types/trades"
+import { useTradesDayView } from "@/lib/hooks/useTrades"
 
 export default function TradesPage() {
+  const router = useRouter()
   const [addTradesOpen, setAddTradesOpen] = useState(false)
   const [timeframe, setTimeframe] = useState<TimeframeOption>("30D")
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -23,8 +25,53 @@ export default function TradesPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const dayRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
-  // Get data (would be fetched based on timeframe in real app)
-  const { days, calendar } = mockDayViewData
+  // Get real data from database
+  const { days: tradeDays, calendarData, loading, hasTrades: hasRealTrades, refresh } = useTradesDayView()
+  
+  // Convert to DayData format for the components
+  const days: DayData[] = useMemo(() => {
+    return tradeDays.map(day => ({
+      date: day.date,
+      dayLabel: day.dateLabel, // Use dayLabel to match DayData type
+      netPnl: day.netPnl,
+      grossPnl: day.grossPnl,
+      commissions: day.commissions,
+      volume: day.volume,
+      profitFactor: day.profitFactor,
+      totalTrades: day.totalTrades,
+      winners: day.winners,
+      losers: day.losers,
+      winrate: day.winrate,
+      equitySeries: day.equitySeries.map(p => ({ time: p.time, value: p.value })),
+      trades: day.trades.map(t => ({
+        id: t.id,
+        symbol: t.symbol,
+        side: t.side as "LONG" | "SHORT",
+        quantity: t.quantity,
+        entryPrice: t.entryPrice,
+        exitPrice: t.exitPrice || 0,
+        entryTime: t.entryTime,
+        exitTime: t.exitTime || t.entryTime,
+        pnl: t.pnl || 0,
+        commission: t.commissions || 0,
+        fee: t.fees || 0,
+        instrumentType: (t.instrumentType || "future") as "stock" | "option" | "future" | "forex" | "crypto" | "cfd",
+      })),
+    }))
+  }, [tradeDays])
+
+  // Build calendar data as CalendarDay[]
+  const calendarDays: CalendarDay[] = useMemo(() => {
+    const result: CalendarDay[] = []
+    calendarData.forEach((pnl, date) => {
+      result.push({
+        date,
+        netPnl: pnl,
+        hasTrades: true,
+      })
+    })
+    return result
+  }, [calendarData])
 
   // Filter days based on search
   const filteredDays = useMemo(() => {
@@ -92,7 +139,17 @@ export default function TradesPage() {
     return { totalPnl, totalTrades, winningDays, losingDays }
   }, [filteredDays])
 
-  const hasTrades = days.length > 0
+  const hasTrades = hasRealTrades
+
+  if (loading) {
+    return (
+      <PageContainer className="pb-8">
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="animate-pulse text-[var(--text-muted)]">Loading trades...</div>
+        </div>
+      </PageContainer>
+    )
+  }
 
   return (
     <PageContainer className="pb-8">
@@ -269,7 +326,7 @@ export default function TradesPage() {
           <div className="hidden lg:block w-[280px] flex-shrink-0">
             <div className="sticky top-6">
               <CalendarSidebar
-                dailyPnl={calendar.dailyPnl}
+                dailyPnl={calendarDays}
                 selectedDate={selectedDate}
                 onDateSelect={handleDateSelect}
               />
@@ -283,7 +340,8 @@ export default function TradesPage() {
         open={addTradesOpen}
         onClose={() => setAddTradesOpen(false)}
         onComplete={() => {
-          console.log("Trade added successfully")
+          refresh()
+          router.refresh()
         }}
       />
     </PageContainer>

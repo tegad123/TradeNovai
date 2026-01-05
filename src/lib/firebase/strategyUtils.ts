@@ -76,7 +76,7 @@ export async function getStrategy(
         console.error("Strategy does not belong to user")
         return null
       }
-      return { id: docSnap.id, ...data }
+      return { ...data, id: docSnap.id }
     }
     return null
   } catch (error) {
@@ -177,7 +177,7 @@ export async function updateStrategy(
     }
 
     const docRef = doc(db, STRATEGIES_COLLECTION, strategyId)
-    await updateDoc(docRef, updateData)
+    await updateDoc(docRef, updateData as { [key: string]: string | number | boolean | object | undefined })
 
     return true
   } catch (error) {

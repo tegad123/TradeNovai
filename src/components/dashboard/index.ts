@@ -8,4 +8,5 @@ export { WinLossRatioCard } from "./WinLossRatioCard"
 export { WinLossMeter } from "./WinLossMeter"
 export { MeterKPICard } from "./MeterKPICard"
 export { CustomizeDashboardDrawer } from "./CustomizeDashboardDrawer"
+export { DateRangePicker } from "./DateRangePicker"
 

@@ -27,7 +27,7 @@ import {
   Menu,
   X
 } from "lucide-react"
-import { useAuth } from "@/lib/hooks/useAuth"
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 
 // Mobile navigation items
 const mobileNavItems = [
@@ -47,7 +47,7 @@ interface HeaderProps {
 
 export function Header({ title, onMenuClick }: HeaderProps) {
   const pathname = usePathname()
-  const { user, signOut } = useAuth()
+  const { user, signOut } = useSupabaseAuthContext()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
@@ -97,21 +97,21 @@ export function Header({ title, onMenuClick }: HeaderProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Avatar className="ml-2 border-2 border-[rgba(255,255,255,var(--glass-border-opacity))] hover:border-[rgba(255,255,255,var(--ui-opacity-20))] transition-colors cursor-pointer">
-                    {user?.photoURL ? (
+                    {user?.user_metadata?.avatar_url ? (
                       <AvatarImage
-                        src={user.photoURL}
-                        alt={user.displayName || "User"}
+                        src={user.user_metadata.avatar_url}
+                        alt={user.user_metadata?.full_name || "User"}
                       />
                     ) : null}
                     <AvatarFallback className="bg-theme-gradient text-white">
-                      {user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U"}
+                      {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || "U"}
                     </AvatarFallback>
                   </Avatar>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56 glass-dropdown border-[rgba(255,255,255,var(--glass-border-opacity))]" align="end" sideOffset={12}>
                   <DropdownMenuLabel className="text-[var(--text-tertiary)]">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium text-white">{user?.displayName || "User"}</p>
+                      <p className="text-sm font-medium text-white">{user?.user_metadata?.full_name || "User"}</p>
                       <p className="text-xs text-[var(--text-muted)]">{user?.email}</p>
                     </div>
                   </DropdownMenuLabel>

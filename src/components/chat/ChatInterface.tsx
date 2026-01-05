@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useChat, Message } from "ai/react";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext";
 import { ModelSelector } from "./ModelSelector";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
@@ -18,7 +18,7 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ conversationId }: ChatInterfaceProps) {
-  const { user, loading: authLoading, signInWithGoogle } = useAuth();
+  const { user, loading: authLoading, signInWithGoogle } = useSupabaseAuthContext();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(
     conversationId || null
@@ -63,7 +63,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
   const loadUserConversations = async () => {
     if (!user) return;
     try {
-      const convos = await loadConversations(user.uid);
+      const convos = await loadConversations(user.id);
       setConversations(convos);
     } catch (err) {
       console.error("Error loading conversations:", err);
@@ -76,7 +76,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
     const title = msgs[0]?.content.slice(0, 50) || "New conversation";
 
     try {
-      const id = await saveConversation(user.uid, {
+      const id = await saveConversation(user.id, {
         id: activeConversationId || undefined,
         title,
         messages: msgs,
@@ -111,7 +111,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
     if (!user) return;
 
     try {
-      await deleteConversation(user.uid, convId);
+      await deleteConversation(user.id, convId);
       if (activeConversationId === convId) {
         handleNewChat();
       }
@@ -204,16 +204,16 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
           {user && (
             <div className="p-4 border-t border-zinc-800">
               <div className="flex items-center gap-3">
-                {user.photoURL && (
+                {user.user_metadata?.avatar_url && (
                   <img
-                    src={user.photoURL}
-                    alt={user.displayName || "User"}
+                    src={user.user_metadata.avatar_url}
+                    alt={user.user_metadata?.full_name || "User"}
                     className="w-8 h-8 rounded-full"
                   />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-zinc-200 truncate">
-                    {user.displayName || user.email}
+                    {user.user_metadata?.full_name || user.email}
                   </p>
                 </div>
               </div>

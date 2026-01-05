@@ -2,6 +2,7 @@ import "./globals.css"
 import { AuthProvider } from "@/lib/contexts/AuthContext"
 import { ThemeProvider } from "@/lib/contexts/ThemeContext"
 import { SupabaseAuthProvider } from "@/lib/contexts/SupabaseAuthContext"
+import { UniversityProvider } from "@/lib/contexts/UniversityContext"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
@@ -22,7 +23,11 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider>
           <SupabaseAuthProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <UniversityProvider>
+                {children}
+              </UniversityProvider>
+            </AuthProvider>
           </SupabaseAuthProvider>
         </ThemeProvider>
       </body>

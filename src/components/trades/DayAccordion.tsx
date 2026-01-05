@@ -143,7 +143,7 @@ export function DayAccordion({
                       borderRadius: "8px",
                       color: "white",
                     }}
-                    formatter={(value: number) => [`$${value.toLocaleString()}`, "P&L"]}
+                    formatter={(value) => [`$${(value ?? 0).toLocaleString()}`, "P&L"]}
                   />
                   <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
                   <Area

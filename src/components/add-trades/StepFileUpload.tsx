@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils"
 import { Broker } from "@/lib/config/brokers"
 import { BrokerLogo } from "@/components/brokers/BrokerLogo"
 import { Button } from "@/components/ui/button"
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
+import { ImportResult } from "@/lib/types/execution"
 
 interface StepFileUploadProps {
   broker: Broker
@@ -26,10 +28,15 @@ const timezones = [
 ]
 
 export function StepFileUpload({ broker, onComplete, onCancel }: StepFileUploadProps) {
+  const { user } = useSupabaseAuthContext()
   const [timezone, setTimezone] = useState("America/New_York")
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [uploadResult, setUploadResult] = useState<{ success: boolean; message: string; rowCount?: number } | null>(null)
+  const [uploadResult, setUploadResult] = useState<{
+    success: boolean
+    message: string
+    details?: ImportResult
+  } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -63,42 +70,72 @@ export function StepFileUpload({ broker, onComplete, onCancel }: StepFileUploadP
 
   const handleUpload = useCallback(async () => {
     if (!file) return
+    if (!user?.id) {
+      setUploadResult({
+        success: false,
+        message: "Please log in to import trades.",
+      })
+      return
+    }
+    
     setUploading(true)
     
     try {
-      // TODO: Actual CSV parsing and upload to database
-      // For now, simulate upload
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-      
-      // Simulate parsing result
-      const mockRowCount = Math.floor(Math.random() * 50) + 10
+      // Create form data for API
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("userId", user.id)
+      formData.append("accountId", "default") // TODO: Allow account selection
+      formData.append("broker", broker.id)
+      formData.append("timezone", timezone)
+      formData.append("format", broker.id === "tradovate" ? "tradovate" : "tradovate") // Default to tradovate format for now
       
       console.log("Uploading file:", {
         broker: broker.id,
         timezone,
         fileName: file.name,
         fileSize: file.size,
+        userId: user.id,
       })
       
-      setUploadResult({
-        success: true,
-        message: `Successfully imported ${mockRowCount} trades from ${file.name}`,
-        rowCount: mockRowCount,
+      // Call the import API
+      const response = await fetch("/api/import/csv", {
+        method: "POST",
+        body: formData,
       })
       
-      // Auto-complete after success
-      setTimeout(() => {
-        onComplete()
-      }, 2000)
+      const result: ImportResult & { error?: string } = await response.json()
+      
+      if (result.success) {
+        const tradesCount = result.tradesCreated + result.tradesUpdated
+        setUploadResult({
+          success: true,
+          message: `Successfully imported ${tradesCount} trade${tradesCount !== 1 ? "s" : ""} (${result.executionsImported} executions) from ${file.name}`,
+          details: result,
+        })
+        
+        // Auto-complete after success
+        setTimeout(() => {
+          onComplete()
+        }, 2500)
+      } else {
+        const errorMsg = result.error || result.errors?.join(", ") || "Unknown error"
+        setUploadResult({
+          success: false,
+          message: `Import failed: ${errorMsg}`,
+          details: result,
+        })
+      }
     } catch (error) {
+      console.error("Upload error:", error)
       setUploadResult({
         success: false,
-        message: "Failed to process file. Please check the format and try again.",
+        message: error instanceof Error ? error.message : "Failed to process file. Please check the format and try again.",
       })
     } finally {
       setUploading(false)
     }
-  }, [file, broker.id, timezone, onComplete])
+  }, [file, broker.id, timezone, onComplete, user])
 
   const assetLabels = [
     { key: "stocks", label: "Stocks" },
@@ -213,23 +250,49 @@ export function StepFileUpload({ broker, onComplete, onCancel }: StepFileUploadP
         {uploadResult && (
           <div
             className={cn(
-              "flex items-start gap-3 p-4 rounded-xl",
+              "space-y-2 p-4 rounded-xl",
               uploadResult.success
                 ? "bg-emerald-500/10 border border-emerald-500/20"
                 : "bg-red-500/10 border border-red-500/20"
             )}
           >
-            {uploadResult.success ? (
-              <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-            ) : (
-              <X className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3">
+              {uploadResult.success ? (
+                <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+              ) : (
+                <X className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              )}
+              <p className={cn(
+                "text-sm",
+                uploadResult.success ? "text-emerald-200" : "text-red-200"
+              )}>
+                {uploadResult.message}
+              </p>
+            </div>
+            {uploadResult.details && (
+              <div className="text-xs text-[var(--text-muted)] pl-8 space-y-1">
+                {uploadResult.details.executionsImported > 0 && (
+                  <p>• {uploadResult.details.executionsImported} executions imported</p>
+                )}
+                {uploadResult.details.tradesCreated > 0 && (
+                  <p>• {uploadResult.details.tradesCreated} trades created</p>
+                )}
+                {uploadResult.details.skippedRows > 0 && (
+                  <p>• {uploadResult.details.skippedRows} rows skipped (duplicates or invalid)</p>
+                )}
+                {uploadResult.details.errors && uploadResult.details.errors.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-red-300">Errors:</p>
+                    {uploadResult.details.errors.slice(0, 5).map((err, i) => (
+                      <p key={i} className="text-red-300/80">• {err}</p>
+                    ))}
+                    {uploadResult.details.errors.length > 5 && (
+                      <p className="text-red-300/80">... and {uploadResult.details.errors.length - 5} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
-            <p className={cn(
-              "text-sm",
-              uploadResult.success ? "text-emerald-200" : "text-red-200"
-            )}>
-              {uploadResult.message}
-            </p>
           </div>
         )}
 

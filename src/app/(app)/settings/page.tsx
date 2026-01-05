@@ -3,11 +3,11 @@
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
 import { useTheme, ThemeColor } from "@/lib/contexts/ThemeContext"
-import { useAuth } from "@/lib/hooks/useAuth"
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 
 export default function SettingsPage() {
   const { themeColor, setThemeColor, availableColors, glassSettings, setGlassPreset } = useTheme()
-  const { user } = useAuth()
+  const { user } = useSupabaseAuthContext()
 
   return (
     <PageContainer>
@@ -21,7 +21,7 @@ export default function SettingsPage() {
               <input
                 type="text"
                 placeholder="Your name"
-                defaultValue={user?.displayName || ""}
+                defaultValue={user?.user_metadata?.full_name || user?.user_metadata?.name || ""}
                 className="w-full px-4 py-2 rounded-lg glass-input text-sm"
               />
             </div>

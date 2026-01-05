@@ -11,12 +11,21 @@ import {
   BookOpen,
   MessageSquare,
   Settings,
-  Menu,
-  X,
-  TrendingUp
+  TrendingUp,
+  GraduationCap,
+  Home,
+  FolderOpen,
+  ClipboardList,
+  FileText,
+  BarChart3,
+  Users,
+  CheckSquare,
+  ChevronDown,
 } from "lucide-react"
+import { useUniversity } from "@/lib/contexts/UniversityContext"
 
-const navigationItems = [
+// Trade Journal navigation items
+const journalNavItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Trades", href: "/trades", icon: LineChart },
   { name: "Calendar", href: "/calendar", icon: Calendar },
@@ -26,6 +35,26 @@ const navigationItems = [
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
+// University navigation items - Student
+const universityStudentNavItems = [
+  { name: "Home", href: "/university/home", icon: Home },
+  { name: "Modules", href: "/university/modules", icon: FolderOpen },
+  { name: "Assignments", href: "/university/assignments", icon: ClipboardList },
+  { name: "Messages", href: "/university/messages", icon: MessageSquare },
+  { name: "Trade Logs", href: "/university/trade-logs", icon: FileText },
+  { name: "Progress", href: "/university/progress", icon: BarChart3 },
+]
+
+// University navigation items - Instructor
+const universityInstructorNavItems = [
+  { name: "Dashboard", href: "/university/instructor", icon: LayoutDashboard },
+  { name: "Modules", href: "/university/modules", icon: FolderOpen },
+  { name: "Assignments", href: "/university/assignments", icon: ClipboardList },
+  { name: "Students", href: "/university/students", icon: Users },
+  { name: "Messages", href: "/university/messages", icon: MessageSquare },
+  { name: "Reviews", href: "/university/reviews", icon: CheckSquare },
+]
+
 interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
@@ -33,6 +62,25 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const pathname = usePathname()
+  const { mode, setMode, currentRole, currentCourse } = useUniversity()
+
+  // Get navigation items based on mode and role
+  const navigationItems = mode === 'university'
+    ? currentRole === 'instructor'
+      ? universityInstructorNavItems
+      : universityStudentNavItems
+    : journalNavItems
+
+  // Build university nav links with course ID if available
+  const getNavHref = (href: string) => {
+    if (mode === 'university' && currentCourse) {
+      // Replace /university/ with /university/[classId]/
+      return href.replace('/university/', `/university/${currentCourse.id}/`)
+    }
+    return href
+  }
+
+  const homeHref = mode === 'university' ? '/university' : '/dashboard'
 
   return (
     <>
@@ -48,7 +96,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       <aside
         className={cn(
           // Fixed positioning for both mobile and desktop
-          "fixed left-0 top-0 h-screen w-64 glass-sidebar transition-transform duration-300",
+          "fixed left-0 top-0 h-screen w-64 glass-sidebar transition-transform duration-300 flex flex-col",
           // z-index: 30 on desktop (below header dropdowns), 70 on mobile (above overlay)
           "z-30 lg:z-30",
           // Mobile: overlay that slides in/out. Desktop: always visible
@@ -57,24 +105,79 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       >
         {/* Logo */}
         <div className="p-6 border-b border-[rgba(255,255,255,var(--glass-border-opacity))]">
-          <Link href="/dashboard" className="flex items-center gap-3">
+          <Link href={homeHref} className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-theme-gradient flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-white" />
+              {mode === 'university' ? (
+                <GraduationCap className="w-5 h-5 text-white" />
+              ) : (
+                <TrendingUp className="w-5 h-5 text-white" />
+              )}
             </div>
-            <span className="text-xl font-bold text-white">TradeNova</span>
+            <span className="text-xl font-bold text-white">
+              {mode === 'university' ? 'University' : 'TradeNova'}
+            </span>
           </Link>
         </div>
 
+        {/* Mode Switcher */}
+        <div className="p-4 border-b border-[rgba(255,255,255,var(--glass-border-opacity))]">
+          <div className="flex rounded-xl bg-white/5 p-1">
+            <button
+              onClick={() => setMode('journal')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                mode === 'journal'
+                  ? "bg-theme-gradient text-white shadow-lg"
+                  : "text-[var(--text-muted)] hover:text-white"
+              )}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span className="hidden sm:inline">Journal</span>
+            </button>
+            <button
+              onClick={() => setMode('university')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                mode === 'university'
+                  ? "bg-theme-gradient text-white shadow-lg"
+                  : "text-[var(--text-muted)] hover:text-white"
+              )}
+            >
+              <GraduationCap className="w-4 h-4" />
+              <span className="hidden sm:inline">University</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Course Selector (University mode only) */}
+        {mode === 'university' && currentCourse && (
+          <div className="px-4 py-3 border-b border-[rgba(255,255,255,var(--glass-border-opacity))]">
+            <Link 
+              href="/university"
+              className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-[var(--text-muted)]">Current Class</p>
+                <p className="text-sm font-medium text-white truncate">{currentCourse.name}</p>
+              </div>
+              <ChevronDown className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+            </Link>
+          </div>
+        )}
+
         {/* Navigation */}
-        <nav className="p-4 space-y-1 overflow-y-auto h-[calc(100vh-88px)]">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navigationItems.map((item) => {
             const Icon = item.icon
-            const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))
+            const href = getNavHref(item.href)
+            const isActive = pathname === href || 
+              (href !== homeHref && pathname.startsWith(href)) ||
+              (mode === 'university' && pathname.includes(item.href.split('/').pop() || ''))
 
             return (
               <Link
                 key={item.name}
-                href={item.href}
+                href={mode === 'university' && !currentCourse && item.href !== '/university/home' ? '/university' : href}
                 onClick={() => {
                   if (window.innerWidth < 1024) onToggle()
                 }}
@@ -99,8 +202,50 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             )
           })}
         </nav>
+
+        {/* Role Switcher (University mode, dev only) */}
+        {mode === 'university' && (
+          <div className="p-4 border-t border-[rgba(255,255,255,var(--glass-border-opacity))]">
+            <RoleSwitcher />
+          </div>
+        )}
       </aside>
     </>
+  )
+}
+
+// Dev-only role switcher component
+function RoleSwitcher() {
+  const { currentRole, setCurrentRole } = useUniversity()
+  
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-[var(--text-muted)] px-1">Dev: Switch Role</p>
+      <div className="flex rounded-lg bg-white/5 p-1">
+        <button
+          onClick={() => setCurrentRole('student')}
+          className={cn(
+            "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+            currentRole === 'student'
+              ? "bg-white/10 text-white"
+              : "text-[var(--text-muted)] hover:text-white"
+          )}
+        >
+          Student
+        </button>
+        <button
+          onClick={() => setCurrentRole('instructor')}
+          className={cn(
+            "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+            currentRole === 'instructor'
+              ? "bg-white/10 text-white"
+              : "text-[var(--text-muted)] hover:text-white"
+          )}
+        >
+          Instructor
+        </button>
+      </div>
+    </div>
   )
 }
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useAuth } from "./useAuth"
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import { 
   DashboardLayout, 
   DEFAULT_DASHBOARD_LAYOUT,
@@ -11,7 +11,7 @@ import {
   getDashboardLayout,
   saveDashboardLayout,
   resetDashboardLayout,
-} from "@/lib/firebase/dashboardLayoutUtils"
+} from "@/lib/supabase/dashboardLayoutUtils"
 
 const LOCAL_STORAGE_KEY = "dashboard-layout"
 
@@ -52,7 +52,7 @@ function clearLocalLayout(): boolean {
 }
 
 export function useDashboardLayout() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useSupabaseAuthContext()
   const [layout, setLayout] = useState<DashboardLayout>(DEFAULT_DASHBOARD_LAYOUT)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -66,9 +66,9 @@ export function useDashboardLayout() {
       setLoading(true)
 
       if (user) {
-        // User is logged in - try Firestore first
-        const savedLayout = await getDashboardLayout(user.uid)
-        setLayout(savedLayout)
+        // User is logged in - try Supabase first
+        const savedLayout = await getDashboardLayout(user.id)
+        setLayout(savedLayout || DEFAULT_DASHBOARD_LAYOUT)
       } else {
         // No user - use localStorage
         const localLayout = getLocalLayout()
@@ -94,8 +94,8 @@ export function useDashboardLayout() {
     let success = false
     
     if (user) {
-      // User is logged in - save to Firestore
-      success = await saveDashboardLayout(user.uid, newLayout)
+      // User is logged in - save to Supabase
+      success = await saveDashboardLayout(user.id, newLayout)
     } else {
       // No user - save to localStorage
       success = saveLocalLayout(newLayout)
@@ -119,7 +119,7 @@ export function useDashboardLayout() {
 
     if (user) {
       // User is logged in - delete from Firestore
-      success = await resetDashboardLayout(user.uid)
+      success = await resetDashboardLayout(user.id)
     } else {
       // No user - clear localStorage
       success = clearLocalLayout()

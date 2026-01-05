@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext";
 
 export default function Home() {
-  const { user, loading, signInWithGoogle, signOut } = useAuth();
+  const { user, loading, signInWithGoogle, signOut } = useSupabaseAuthContext();
 
   return (
     <main className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--theme-bg-color)' }}>
@@ -30,15 +30,15 @@ export default function Home() {
               <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
             ) : user ? (
               <div className="flex items-center gap-3">
-                {user.photoURL && (
+                {user.user_metadata?.avatar_url && (
                   <img
-                    src={user.photoURL}
-                    alt={user.displayName || "User"}
+                    src={user.user_metadata.avatar_url}
+                    alt={user.user_metadata?.full_name || "User"}
                     className="w-8 h-8 rounded-full ring-2 ring-white/10"
                   />
                 )}
                 <span className="text-sm text-[var(--text-secondary)] hidden sm:inline">
-                  {user.displayName || user.email}
+                  {user.user_metadata?.full_name || user.email}
                 </span>
                 <button
                   onClick={signOut}

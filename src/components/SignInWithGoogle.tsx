@@ -1,9 +1,9 @@
 "use client";
 
-import { useAuth } from '../lib/hooks/useAuth';
+import { useSupabaseAuthContext } from '../lib/contexts/SupabaseAuthContext';
 
 export default function SignInWithGoogle() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle } = useSupabaseAuthContext();
 
   return (
     <button
