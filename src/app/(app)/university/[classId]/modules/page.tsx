@@ -227,19 +227,31 @@ export default function ModulesPage() {
     setUpdatingAccess(true)
     
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleToggleAssignment:start',message:'toggle module assignment',data:{courseIdTail:currentCourse.id.slice(-6),moduleIdTail:accessModuleId.slice(-6),studentIdTail:studentId.slice(-6),wasAssigned:isAssigned,moduleIsPublished:!!modules.find(m=>m.id===accessModuleId)?.is_published,moduleIsRestricted:!!modules.find(m=>m.id===accessModuleId)?.is_restricted,assignedCount:assignedStudentIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       if (isAssigned) {
         const success = await unassignModule(accessModuleId, studentId)
         if (success) {
           setAssignedStudentIds(prev => prev.filter(id => id !== studentId))
         }
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleToggleAssignment:unassignResult',message:'unassign module result',data:{moduleIdTail:accessModuleId.slice(-6),studentIdTail:studentId.slice(-6),success},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
       } else {
         const success = await assignModule(accessModuleId, studentId)
         if (success) {
           setAssignedStudentIds(prev => [...prev, studentId])
         }
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleToggleAssignment:assignResult',message:'assign module result',data:{moduleIdTail:accessModuleId.slice(-6),studentIdTail:studentId.slice(-6),success},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
       }
     } catch (error) {
       console.error('Toggle assignment error:', error)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleToggleAssignment:catch',message:'toggle assignment threw',data:{moduleIdTail:accessModuleId.slice(-6),studentIdTail:studentId.slice(-6)},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
     } finally {
       setUpdatingAccess(false)
     }
@@ -248,6 +260,17 @@ export default function ModulesPage() {
   const handleToggleRestricted = async (restricted: boolean) => {
     if (!accessModuleId) return
     await updateModule(accessModuleId, { is_restricted: restricted } as any)
+  }
+
+  const handleTogglePublished = async (published: boolean) => {
+    if (!accessModuleId) return
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleTogglePublished:start',message:'toggle module published',data:{moduleIdTail:accessModuleId.slice(-6),published},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-postfix',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+    const ok = await updateModule(accessModuleId, { is_published: published } as any)
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'modules/page.tsx:handleTogglePublished:result',message:'toggle module published result',data:{moduleIdTail:accessModuleId.slice(-6),published,ok},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-postfix',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
   }
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -745,6 +768,19 @@ export default function ModulesPage() {
           </DialogHeader>
 
           <div className="mt-4 space-y-6">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Published</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students only see published modules.
+                </div>
+              </div>
+              <Switch
+                checked={modules.find(m => m.id === accessModuleId)?.is_published || false}
+                onCheckedChange={handleTogglePublished}
+              />
+            </div>
+
             <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
               <div className="space-y-0.5">
                 <div className="text-sm font-medium text-white">Restrict Access</div>

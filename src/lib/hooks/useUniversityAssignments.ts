@@ -46,6 +46,9 @@ export function useUniversityAssignments(
         assignmentData = await getStudentVisibleAssignments(courseId, user.id)
       }
       setAssignments(assignmentData)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useUniversityAssignments.ts:loadData:assignments',message:'loaded assignments',data:{courseIdTail:courseId.slice(-6),userIdTail:user.id.slice(-6),role,assignmentsCount:assignmentData.length,publishedCount:assignmentData.filter(a=>a.is_published).length,restrictedCount:assignmentData.filter(a=>a.is_restricted).length},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
 
       // Load submissions based on role
       let submissionData: Submission[]

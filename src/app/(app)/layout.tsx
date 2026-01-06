@@ -30,6 +30,29 @@ export default function AppLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
+    // #region agent log
+    try {
+      const cssVarBg = getComputedStyle(document.documentElement).getPropertyValue('--theme-bg-color').trim()
+      const sheets = Array.from(document.styleSheets || [])
+      const sheetHrefs = sheets
+        .map((s) => (s as CSSStyleSheet).href)
+        .filter((h): h is string => typeof h === 'string')
+        .slice(0, 5)
+
+      const probe = document.createElement('div')
+      probe.className = 'hidden bg-red-500'
+      document.body.appendChild(probe)
+      const probeBg = getComputedStyle(probe).backgroundColor
+      probe.remove()
+
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'(app)/layout.tsx:cssProbe',message:'css probe',data:{href:window.location.href,host:window.location.host,pathname,mode,hasUser:!!user,styleSheetsCount:sheets.length,firstSheetHrefs:sheetHrefs,cssVarBg,tailwindProbeBg:probeBg},timestamp:Date.now(),sessionId:'debug-session',runId:'ui-css-v1',hypothesisId:'U1'})}).catch(()=>{});
+    } catch (e) {
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'(app)/layout.tsx:cssProbe:catch',message:'css probe threw',data:{pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'ui-css-v1',hypothesisId:'U1'})}).catch(()=>{});
+    }
+    // #endregion
+  }, [pathname, mode, user])
+
+  useEffect(() => {
     if (loading) return
     if (!user) {
       router.push("/")

@@ -290,6 +290,18 @@ export default function AssignmentsPage({ params }: PageProps) {
     refetch()
   }
 
+  const handleTogglePublished = async (published: boolean) => {
+    if (!accessAssignmentId) return
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'assignments/page.tsx:handleTogglePublished:start',message:'toggle assignment published',data:{assignmentIdTail:accessAssignmentId.slice(-6),published},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-postfix',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+    const ok = await updateAssignment(accessAssignmentId, { is_published: published })
+    refetch()
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'assignments/page.tsx:handleTogglePublished:result',message:'toggle assignment published result',data:{assignmentIdTail:accessAssignmentId.slice(-6),published,ok},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-postfix',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+  }
+
   const getFileIcon = (url: string) => {
     const ext = url.split('.').pop()?.toLowerCase()
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
@@ -706,6 +718,19 @@ export default function AssignmentsPage({ params }: PageProps) {
           </DialogHeader>
 
           <div className="mt-4 space-y-6">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Published</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students only see published assignments.
+                </div>
+              </div>
+              <Switch
+                checked={assignments.find(a => a.id === accessAssignmentId)?.is_published || false}
+                onCheckedChange={handleTogglePublished}
+              />
+            </div>
+
             <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
               <div className="space-y-0.5">
                 <div className="text-sm font-medium text-white">Restrict Access</div>
