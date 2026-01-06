@@ -43,6 +43,7 @@ const universityStudentNavItems = [
   { name: "Messages", href: "/university/messages", icon: MessageSquare },
   { name: "Trade Logs", href: "/university/trade-logs", icon: FileText },
   { name: "Progress", href: "/university/progress", icon: BarChart3 },
+  { name: "Settings", href: "/university/student/settings", icon: Settings, absolute: true },
 ]
 
 // University navigation items - Instructor
@@ -53,6 +54,7 @@ const universityInstructorNavItems = [
   { name: "Students", href: "/university/students", icon: Users },
   { name: "Messages", href: "/university/messages", icon: MessageSquare },
   { name: "Reviews", href: "/university/reviews", icon: CheckSquare },
+  { name: "Settings", href: "/university/instructor/settings", icon: Settings, absolute: true },
 ]
 
 interface SidebarProps {
@@ -72,7 +74,10 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
     : journalNavItems
 
   // Build university nav links with course ID if available
-  const getNavHref = (href: string) => {
+  const getNavHref = (href: string, absolute?: boolean) => {
+    // Absolute links (like settings) should not be modified
+    if (absolute) return href
+    
     if (mode === 'university' && currentCourse) {
       // Replace /university/ with /university/[classId]/
       return href.replace('/university/', `/university/${currentCourse.id}/`)
@@ -183,7 +188,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           {/* Show navigation only if not in university mode, or if a course is selected */}
           {(mode !== 'university' || currentCourse) && navigationItems.map((item) => {
             const Icon = item.icon
-            const href = getNavHref(item.href)
+            const href = getNavHref(item.href, (item as any).absolute)
             const isActive = pathname === href || 
               (href !== homeHref && pathname.startsWith(href)) ||
               (mode === 'university' && pathname.includes(item.href.split('/').pop() || ''))

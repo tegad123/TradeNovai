@@ -1857,3 +1857,42 @@ export async function getCourseInstructor(courseId: string): Promise<UserProfile
   return profile
 }
 
+// Get all courses for an instructor
+export async function getInstructorCourses(instructorId: string): Promise<Course[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('courses')
+    .select('*')
+    .eq('instructor_id', instructorId)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching instructor courses:', error)
+    return []
+  }
+
+  return data || []
+}
+
+// Remove a student from a course
+export async function removeStudentFromCourse(courseId: string, studentId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('course_enrollments')
+    .delete()
+    .eq('course_id', courseId)
+    .eq('user_id', studentId)
+    .eq('role', 'student')
+
+  if (error) {
+    console.error('Error removing student from course:', error)
+    return false
+  }
+
+  return true
+}
+

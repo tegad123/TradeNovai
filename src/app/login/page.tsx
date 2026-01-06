@@ -1,39 +1,55 @@
 "use client"
 
-import { useEffect, Suspense, useMemo, useState } from "react"
+import { useEffect, Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import Link from "next/link"
+import { GraduationCap, TrendingUp, ArrowRight } from "lucide-react"
+import { GlassCard } from "@/components/glass/GlassCard"
 
 type LoginProduct = "university" | "journal"
 const LOGIN_PRODUCT_KEY = "tradenova:loginProduct"
 
 function LoginContent() {
-  const { user, loading, signInWithGoogle } = useSupabaseAuthContext()
+  const { user, loading } = useSupabaseAuthContext()
   const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get("error")
-  const [product, setProduct] = useState<LoginProduct>("university")
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    try {
+    setMounted(true)
+  }, [])
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (!loading && user && mounted) {
+      // Check stored login product
       const stored = localStorage.getItem(LOGIN_PRODUCT_KEY) as LoginProduct | null
-      if (stored === "journal" || stored === "university") setProduct(stored)
+      if (stored === "journal") {
+        router.push("/dashboard")
+      } else {
+        router.push("/university")
+      }
+    }
+  }, [user, loading, router, mounted])
+
+  const handleSelectProduct = (product: LoginProduct) => {
+    try {
+      localStorage.setItem(LOGIN_PRODUCT_KEY, product)
     } catch {
       // ignore
     }
-  }, [])
-
-  const nextPath = useMemo(() => (product === "journal" ? "/dashboard" : "/university"), [product])
-
-  // Redirect based on selected product if already logged in
-  useEffect(() => {
-    if (!loading && user) {
-      router.push(nextPath)
+    
+    if (product === "university") {
+      router.push("/university")
+    } else {
+      // Journal is coming soon - still allow navigation but they'll see coming soon
+      router.push("/dashboard")
     }
-  }, [user, loading, router, nextPath])
+  }
 
-  if (loading) {
+  if (loading || !mounted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--theme-bg-color)]">
         <div className="animate-pulse text-[var(--text-muted)]">Loading...</div>
@@ -43,104 +59,87 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--theme-bg-color)] px-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-3xl">
         {/* Logo / Brand */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-theme-gradient flex items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-theme-gradient flex items-center justify-center">
               <span className="text-white font-bold text-xl">T</span>
             </div>
-            <span className="text-2xl font-bold text-white">TradeNova</span>
+            <span className="text-3xl font-bold text-white">TradeNova</span>
           </Link>
-          <h1 className="text-2xl font-bold text-white mb-2">Welcome back</h1>
+          <h1 className="text-2xl font-bold text-white mb-2">Welcome to TradeNova</h1>
           <p className="text-[var(--text-muted)]">
-            Choose a product and sign in with Google
+            Choose where you want to go
           </p>
         </div>
 
         {/* Error message */}
         {error && (
-          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center max-w-md mx-auto">
             {error === "auth_callback_error" 
               ? "There was an error signing in. Please try again."
               : error}
           </div>
         )}
 
-        {/* Login card */}
-        <div className="glass-card p-8">
-          <div className="mb-5">
-            <div className="flex rounded-xl bg-white/5 p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setProduct("university")
-                  try { localStorage.setItem(LOGIN_PRODUCT_KEY, "university") } catch {}
-                }}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  product === "university"
-                    ? "bg-theme-gradient text-white shadow-lg"
-                    : "text-[var(--text-muted)] hover:text-white"
-                }`}
-              >
-                University
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setProduct("journal")
-                  try { localStorage.setItem(LOGIN_PRODUCT_KEY, "journal") } catch {}
-                }}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  product === "journal"
-                    ? "bg-theme-gradient text-white shadow-lg"
-                    : "text-[var(--text-muted)] hover:text-white"
-                }`}
-              >
-                Journal <span className="ml-1 text-xs opacity-80">(Coming soon)</span>
-              </button>
-            </div>
-            {product === "journal" ? (
-              <p className="mt-2 text-xs text-[var(--text-muted)]">
-                Journal is coming soon. You can sign in now, but you’ll land on a Coming Soon screen.
-              </p>
-            ) : null}
-          </div>
-
+        {/* Product Selection Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* University Card */}
           <button
-            onClick={() => signInWithGoogle({ next: nextPath })}
-            className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl bg-white text-gray-900 font-medium hover:bg-gray-100 transition-colors shadow-lg"
+            onClick={() => handleSelectProduct("university")}
+            className="text-left group"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              />
-            </svg>
-            Sign in with Google
+            <GlassCard className="p-8 h-full hover:bg-white/[0.08] transition-all group-hover:ring-2 ring-[hsl(var(--theme-primary))]/50">
+              <div className="w-16 h-16 rounded-2xl bg-theme-gradient/20 mb-6 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <GraduationCap className="w-8 h-8 text-[hsl(var(--theme-primary))]" />
+              </div>
+              
+              <h2 className="text-xl font-semibold text-white mb-2 group-hover:text-[hsl(var(--theme-primary))] transition-colors">
+                University
+              </h2>
+              <p className="text-[var(--text-muted)] mb-6">
+                Learn to trade with structured courses, expert guidance, and track your progress.
+              </p>
+
+              <div className="flex items-center text-[hsl(var(--theme-primary))] font-medium">
+                Continue
+                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </GlassCard>
           </button>
 
-          <div className="mt-6 text-center">
-            <p className="text-xs text-[var(--text-muted)]">
-              By signing in, you agree to our Terms of Service and Privacy Policy
-            </p>
-          </div>
+          {/* Journal Card */}
+          <button
+            onClick={() => handleSelectProduct("journal")}
+            className="text-left group"
+          >
+            <GlassCard className="p-8 h-full hover:bg-white/[0.08] transition-all group-hover:ring-2 ring-white/20 relative overflow-hidden">
+              <div className="absolute top-4 right-4 px-2 py-1 rounded-full bg-white/10 text-xs text-[var(--text-muted)]">
+                Coming Soon
+              </div>
+              
+              <div className="w-16 h-16 rounded-2xl bg-white/10 mb-6 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <TrendingUp className="w-8 h-8 text-[var(--text-muted)]" />
+              </div>
+              
+              <h2 className="text-xl font-semibold text-white mb-2 transition-colors">
+                Trading Journal
+              </h2>
+              <p className="text-[var(--text-muted)] mb-6">
+                Track your trades, analyze performance, and improve your trading with AI insights.
+              </p>
+
+              <div className="flex items-center text-[var(--text-muted)] font-medium">
+                View Preview
+                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </GlassCard>
+          </button>
         </div>
 
         {/* Back to home link */}
-        <div className="mt-6 text-center">
+        <div className="text-center">
           <Link 
             href="/"
             className="text-sm text-[var(--text-muted)] hover:text-white transition-colors"

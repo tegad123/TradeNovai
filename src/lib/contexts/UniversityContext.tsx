@@ -40,6 +40,7 @@ export interface UniversityContextType {
 
 const LOCAL_STORAGE_KEY = "university-state"
 const LOGIN_PRODUCT_KEY = "tradenova:loginProduct"
+const ROLE_STORAGE_KEY = "tradenova:universityRole"
 
 interface StoredState {
   mode: 'journal' | 'university'
@@ -92,6 +93,12 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
       const loginProduct = localStorage.getItem(LOGIN_PRODUCT_KEY)
       if (loginProduct === "university") setModeState("university")
       if (loginProduct === "journal") setModeState("journal")
+      
+      // Also check for role set during login flow
+      const storedRole = localStorage.getItem(ROLE_STORAGE_KEY) as UserRole | null
+      if (storedRole && (storedRole === 'student' || storedRole === 'instructor')) {
+        setCurrentRoleState(storedRole)
+      }
     } catch (e) {
       console.error("Failed to load university state:", e)
     }
@@ -173,6 +180,10 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
   const setCurrentRole = useCallback((role: UserRole) => {
     setCurrentRoleState(role)
     saveState({ currentRole: role })
+    // Also update the dedicated role storage key for consistency with login pages
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(ROLE_STORAGE_KEY, role)
+    }
   }, [saveState])
 
   // Set current course
