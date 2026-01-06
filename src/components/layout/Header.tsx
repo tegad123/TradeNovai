@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -47,8 +47,17 @@ interface HeaderProps {
 
 export function Header({ title, onMenuClick }: HeaderProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, signOut } = useSupabaseAuthContext()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+    } finally {
+      router.push("/")
+    }
+  }
 
   return (
     <TooltipProvider>
@@ -131,7 +140,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
                   <DropdownMenuSeparator className="bg-[rgba(255,255,255,var(--ui-opacity-10))]" />
                   <DropdownMenuItem
                     className="text-red-400 focus:bg-[rgba(255,255,255,var(--ui-opacity-10))] focus:text-red-400 cursor-pointer"
-                    onClick={signOut}
+                    onClick={handleSignOut}
                   >
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>

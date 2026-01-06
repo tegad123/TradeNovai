@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
-import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { Header } from "@/components/layout/Header"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
-import { DemoUserSwitcher } from "@/components/university/DemoUserSwitcher"
+import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 
 // Map routes to titles
 const routeTitles: Record<string, string> = {
@@ -24,8 +24,17 @@ export default function AppLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, loading } = useSupabaseAuthContext()
   const { mode } = useUniversity()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    if (loading) return
+    if (!user) {
+      router.push("/")
+    }
+  }, [user, loading, router, pathname])
 
   // Get title from pathname
   const title = Object.entries(routeTitles).find(([path]) => 
@@ -49,7 +58,6 @@ export default function AppLayout({
       </div>
 
       {/* Demo Switcher - Only in University mode */}
-      {mode === 'university' && <DemoUserSwitcher />}
     </div>
   )
 }

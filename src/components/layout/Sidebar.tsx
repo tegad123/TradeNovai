@@ -217,49 +217,9 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
           })}
         </nav>
 
-        {/* Role Switcher (University mode, instructors only for testing) */}
-        {mode === 'university' && currentRole === 'instructor' && (
-          <div className="p-4 border-t border-[rgba(255,255,255,var(--glass-border-opacity))]">
-            <RoleSwitcher />
-          </div>
-        )}
+        {/* Intentionally no dev-only role switching in launch builds */}
       </aside>
     </>
-  )
-}
-
-// Dev-only role switcher component
-function RoleSwitcher() {
-  const { currentRole, setCurrentRole } = useUniversity()
-  
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-[var(--text-muted)] px-1">Dev: Switch Role</p>
-      <div className="flex rounded-lg bg-white/5 p-1">
-        <button
-          onClick={() => setCurrentRole('student')}
-          className={cn(
-            "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-            currentRole === 'student'
-              ? "bg-white/10 text-white"
-              : "text-[var(--text-muted)] hover:text-white"
-          )}
-        >
-          Student
-        </button>
-        <button
-          onClick={() => setCurrentRole('instructor')}
-          className={cn(
-            "flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-            currentRole === 'instructor'
-              ? "bg-white/10 text-white"
-              : "text-[var(--text-muted)] hover:text-white"
-          )}
-        >
-          Instructor
-        </button>
-      </div>
-    </div>
   )
 }
 

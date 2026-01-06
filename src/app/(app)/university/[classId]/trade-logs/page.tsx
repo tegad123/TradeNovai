@@ -21,8 +21,8 @@ import { GlassCard } from "@/components/glass/GlassCard"
 import { Button } from "@/components/ui/button"
 import { useUniversityTradeLogs } from "@/lib/hooks/useUniversityTradeLogs"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
-import { uploadFile } from "@/lib/supabase/storageUtils"
-import type { TradeLog } from "@/lib/university/types"
+import { uploadScreenshot } from "@/lib/supabase/storageUtils"
+import type { UniversityTradeLog } from "@/lib/supabase/universityUtils"
 
 interface PageProps {
   params: { classId: string }
@@ -31,7 +31,7 @@ interface PageProps {
 export default function TradeLogsPage({ params }: PageProps) {
   const { classId } = params
   const { currentRole, currentUser } = useUniversity()
-  const { tradeLogs, isLoading, submitTradeLog } = useUniversityTradeLogs(classId)
+  const { tradeLogs, isLoading, submitTradeLog } = useUniversityTradeLogs(classId, currentRole)
   
   const [showForm, setShowForm] = useState(false)
   const [tradeDate, setTradeDate] = useState(new Date().toISOString().split('T')[0])
@@ -77,7 +77,7 @@ export default function TradeLogsPage({ params }: PageProps) {
     // Upload screenshot if present
     if (screenshotFile) {
       setUploadingScreenshot(true)
-      const result = await uploadFile(screenshotFile, currentUser.id, 'trade-logs')
+      const result = await uploadScreenshot(screenshotFile, currentUser.id)
       setUploadingScreenshot(false)
       
       if (result.success && result.url) {
@@ -111,8 +111,8 @@ export default function TradeLogsPage({ params }: PageProps) {
     })
   }
 
-  const getStatusBadge = (log: TradeLog) => {
-    if (log.feedback) {
+  const getStatusBadge = (log: UniversityTradeLog) => {
+    if (log.instructor_feedback) {
       return (
         <span className="flex items-center gap-1 text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded-full">
           <CheckCircle2 className="w-3 h-3" />
@@ -334,7 +334,7 @@ export default function TradeLogsPage({ params }: PageProps) {
                     </div>
 
                     {/* Screenshots */}
-                    {(log.screenshot_url || (log.screenshot_urls && log.screenshot_urls.length > 0)) && (
+                    {(log.screenshot_url || (log.screenshots && log.screenshots.length > 0)) && (
                       <div>
                         <h4 className="text-sm font-medium text-[var(--text-muted)] mb-2">Screenshot</h4>
                         <div className="flex gap-2 flex-wrap">
@@ -353,7 +353,7 @@ export default function TradeLogsPage({ params }: PageProps) {
                               />
                             </a>
                           )}
-                          {log.screenshot_urls?.map((url, i) => (
+                          {log.screenshots?.map((url, i) => (
                             <a
                               key={i}
                               href={url}
@@ -374,17 +374,17 @@ export default function TradeLogsPage({ params }: PageProps) {
                     )}
 
                     {/* Instructor Feedback */}
-                    {log.feedback && (
+                    {log.instructor_feedback && (
                       <div className="p-4 rounded-xl bg-green-400/10 border border-green-400/20">
                         <div className="flex items-center gap-2 mb-2">
                           <MessageSquare className="w-4 h-4 text-green-400" />
                           <h4 className="text-sm font-medium text-green-400">Instructor Feedback</h4>
                         </div>
-                        <p className="text-white">{log.feedback}</p>
+                        <p className="text-white">{log.instructor_feedback}</p>
                       </div>
                     )}
 
-                    {!log.feedback && !isInstructor && (
+                    {!log.instructor_feedback && !isInstructor && (
                       <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                         <p className="text-sm text-[var(--text-muted)] text-center">
                           Waiting for instructor feedback...

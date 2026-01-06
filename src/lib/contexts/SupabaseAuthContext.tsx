@@ -8,7 +8,7 @@ interface SupabaseAuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
-  signInWithGoogle: () => Promise<void>
+  signInWithGoogle: (options?: { next?: string }) => Promise<void>
   signOut: () => Promise<void>
 }
 

@@ -266,7 +266,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
               Sign in with your Google account to start chatting and save your conversations.
             </p>
             <button
-              onClick={signInWithGoogle}
+              onClick={() => signInWithGoogle()}
               className="flex items-center gap-3 px-5 py-3 rounded-xl bg-white text-zinc-900 font-medium hover:bg-zinc-100 transition-colors shadow-lg"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">

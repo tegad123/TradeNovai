@@ -34,10 +34,6 @@ export default function StudentsPage({ params }: PageProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null)
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'students/page.tsx:mount',message:'data structure check',data:{count:allStudentsProgress?.length,firstItem:allStudentsProgress?.[0]?JSON.stringify(allStudentsProgress[0]).slice(0,400):null,keys:allStudentsProgress?.[0]?Object.keys(allStudentsProgress[0]):null,hasStudentProp:allStudentsProgress?.[0]?.hasOwnProperty('student'),hasUserName:allStudentsProgress?.[0]?.hasOwnProperty('user_name')},timestamp:Date.now(),sessionId:'debug-session',runId:'students-v1',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-
   // Redirect if not instructor
   if (currentRole !== 'instructor') {
     return (

@@ -29,15 +29,11 @@ export default function InstructorDashboardPage({ params }: PageProps) {
   const { currentRole } = useUniversity()
   const { allStudentsProgress, loading: progressLoading } = useUniversityProgress(classId, currentRole)
   const { submissions, loading: assignmentsLoading } = useUniversityAssignments(classId, currentRole)
-  const { tradeLogs, isLoading: logsLoading } = useUniversityTradeLogs(classId)
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'instructor/page.tsx:mount',message:'data structure check',data:{count:allStudentsProgress?.length,firstItem:allStudentsProgress?.[0]?JSON.stringify(allStudentsProgress[0]).slice(0,400):null,keys:allStudentsProgress?.[0]?Object.keys(allStudentsProgress[0]):null,hasStudentProp:allStudentsProgress?.[0]?.hasOwnProperty('student'),hasUserName:allStudentsProgress?.[0]?.hasOwnProperty('user_name')},timestamp:Date.now(),sessionId:'debug-session',runId:'instructor-v1',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
+  const { tradeLogs, isLoading: logsLoading } = useUniversityTradeLogs(classId, currentRole)
 
   const isLoading = progressLoading || assignmentsLoading || logsLoading
 
-  // Gate for non-instructors: Show "Become an Instructor" enrollment screen
+  // Gate for non-instructors: Students should not access instructor dashboard
   if (currentRole !== 'instructor') {
     return (
       <PageContainer>
@@ -46,23 +42,13 @@ export default function InstructorDashboardPage({ params }: PageProps) {
             <div className="w-16 h-16 rounded-2xl bg-[hsl(var(--theme-primary))]/20 flex items-center justify-center mx-auto mb-6">
               <GraduationCap className="w-8 h-8 text-[hsl(var(--theme-primary))]" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Become an Instructor</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Access denied</h3>
             <p className="text-[var(--text-muted)] mb-6">
-              Enter your instructor access code to create and manage courses.
+              You&apos;re enrolled as a student in this course.
             </p>
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Enter access code"
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-primary))]/50"
-              />
-              <Button variant="glass-theme" className="w-full">
-                Verify Code
-              </Button>
-            </div>
-            <p className="text-xs text-[var(--text-muted)] mt-6">
-              Don&apos;t have a code? <a href="#" className="text-[hsl(var(--theme-primary))] hover:underline">Learn about instructor accounts</a>
-            </p>
+            <Button variant="glass" className="w-full" onClick={() => router.push(`/university/${classId}/home`)}>
+              Go to course home
+            </Button>
           </GlassCard>
         </div>
       </PageContainer>
@@ -87,10 +73,8 @@ export default function InstructorDashboardPage({ params }: PageProps) {
   const avgProgress = totalStudents > 0
     ? Math.round(
         allStudentsProgress.reduce((sum, sp) => {
-          const p = sp.progress
-          if (!p) return sum
-          const lessonPct = p.total_lessons > 0 ? (p.lessons_completed / p.total_lessons) * 100 : 0
-          const assignPct = p.total_assignments > 0 ? (p.assignments_submitted / p.total_assignments) * 100 : 0
+          const lessonPct = sp.total_lessons > 0 ? (sp.lessons_completed / sp.total_lessons) * 100 : 0
+          const assignPct = sp.total_assignments > 0 ? (sp.assignments_completed / sp.total_assignments) * 100 : 0
           return sum + (lessonPct + assignPct) / 2
         }, 0) / totalStudents
       )

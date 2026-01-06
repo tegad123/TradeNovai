@@ -17,10 +17,6 @@ export default function ClassLayout({
   useEffect(() => {
     if (isLoading) return
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'university/[classId]/layout.tsx:useEffect',message:'class layout resolving course',data:{classId,coursesCount:courses.length,currentCourseId:currentCourse?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'class-layout-v1',hypothesisId:'H6'})}).catch(()=>{});
-    // #endregion
-
     // Prefer already-loaded courses from context
     const byId = courses.find(c => c.id === classId)
     const byAccessCode = courses.find(c => (c as any).access_code?.toLowerCase?.() === classId.toLowerCase())
@@ -45,9 +41,6 @@ export default function ClassLayout({
 
       // If still not set, bail to /university
       // (selectCourse handles missing IDs by returning null)
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'university/[classId]/layout.tsx:useEffect',message:'selectCourse attempted',data:{classId},timestamp:Date.now(),sessionId:'debug-session',runId:'class-layout-v1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
     })().catch(() => {
       router.push("/university")
     })

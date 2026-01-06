@@ -1,10 +1,9 @@
-import { AICoachInterface } from "@/components/chat/AICoachInterface"
+"use client"
+
+import { JournalComingSoon } from "@/components/journal/JournalComingSoon"
 
 export default function ChatPage() {
-  return (
-    <div className="h-[calc(100vh-80px)]">
-      <AICoachInterface />
-    </div>
-  )
+  return <JournalComingSoon title="AI Chat" />
 }
+
 

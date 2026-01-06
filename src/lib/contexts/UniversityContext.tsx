@@ -26,8 +26,6 @@ export interface UniversityContextType {
   mode: 'journal' | 'university'
   setMode: (mode: 'journal' | 'university') => void
   currentUser: UniversityUser | null
-  impersonateUser: (user: UniversityUser | null) => void
-  isImpersonating: boolean
   currentRole: UserRole
   setCurrentRole: (role: UserRole) => void
   courses: Course[]
@@ -35,12 +33,13 @@ export interface UniversityContextType {
   setCurrentCourse: (course: Course | null) => void
   selectCourse: (courseId: string) => Promise<void>
   joinCourse: (accessCode: string) => Promise<Course | null>
-  createCourse: (data: { name: string; code: string; description?: string; cover_image_url?: string }) => Promise<Course | null>
+  createCourse: (data: { name: string; code: string; access_code: string; description?: string; cover_image_url?: string }) => Promise<Course | null>
   refreshCourses: () => Promise<void>
   isLoading: boolean
 }
 
 const LOCAL_STORAGE_KEY = "university-state"
+const LOGIN_PRODUCT_KEY = "tradenova:loginProduct"
 
 interface StoredState {
   mode: 'journal' | 'university'
@@ -49,7 +48,7 @@ interface StoredState {
 }
 
 const defaultState: StoredState = {
-  mode: 'journal',
+  mode: 'university',
   currentRole: 'student',
   currentCourseId: null,
 }
@@ -59,12 +58,11 @@ const UniversityContext = createContext<UniversityContextType | undefined>(undef
 export function UniversityProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useSupabaseAuthContext()
   
-  const [mode, setModeState] = useState<'journal' | 'university'>('journal')
+  const [mode, setModeState] = useState<'journal' | 'university'>('university')
   const [currentRole, setCurrentRoleState] = useState<UserRole>('student')
   const [courses, setCourses] = useState<Course[]>([])
   const [currentCourse, setCurrentCourseState] = useState<Course | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [impersonatedUser, setImpersonatedUser] = useState<UniversityUser | null>(null)
 
   // Get current university user from Supabase auth user
   const realUser: UniversityUser | null = user ? {
@@ -74,8 +72,8 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
     avatarUrl: user.user_metadata?.avatar_url
   } : null
 
-  // The user actually used by the app (real or impersonated)
-  const currentUser = impersonatedUser || realUser
+  // University mode always uses the authenticated Supabase user (real accounts).
+  const currentUser = realUser
 
   // Load state from localStorage
   useEffect(() => {
@@ -89,6 +87,11 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
         setCurrentRoleState(state.currentRole)
         // Course will be loaded from Supabase based on stored ID
       }
+
+      // Override with the most recent login selection (launch behavior)
+      const loginProduct = localStorage.getItem(LOGIN_PRODUCT_KEY)
+      if (loginProduct === "university") setModeState("university")
+      if (loginProduct === "journal") setModeState("journal")
     } catch (e) {
       console.error("Failed to load university state:", e)
     }
@@ -196,8 +199,8 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
   }, [setCurrentCourse])
 
   // Join a course with access code
-  const joinCourse = useCallback(async (accessCode: string): Promise<boolean> => {
-    if (!user) return false
+  const joinCourse = useCallback(async (accessCode: string): Promise<Course | null> => {
+    if (!user) return null
     
     const result = await joinCourseUtil(user.id, accessCode)
     
@@ -215,11 +218,12 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
     return null
   }, [user, setCurrentCourse])
 
-  const createCourse = useCallback(async (data: { name: string; code: string; description?: string; cover_image_url?: string }): Promise<Course | null> => {
+  const createCourse = useCallback(async (data: { name: string; code: string; access_code: string; description?: string; cover_image_url?: string }): Promise<Course | null> => {
     if (!user) return null
     const created = await createCourseUtil(user.id, {
       name: data.name,
       code: data.code,
+      access_code: data.access_code,
       description: data.description,
       cover_image_url: data.cover_image_url,
     })
@@ -239,25 +243,12 @@ export function UniversityProvider({ children }: { children: ReactNode }) {
     setCourses(userCourses)
   }, [user])
 
-  const impersonateUser = useCallback(async (demoUser: UniversityUser | null) => {
-    setImpersonatedUser(demoUser)
-    if (demoUser && currentCourse) {
-      const role = await getUserRoleInCourse(demoUser.id, currentCourse.id)
-      setCurrentRoleState(role || 'student')
-    } else if (!demoUser && user && currentCourse) {
-      const role = await getUserRoleInCourse(user.id, currentCourse.id)
-      setCurrentRoleState(role || 'student')
-    }
-  }, [user, currentCourse])
-
   return (
     <UniversityContext.Provider
       value={{
         mode,
         setMode,
         currentUser,
-        impersonateUser,
-        isImpersonating: !!impersonatedUser,
         currentRole,
         setCurrentRole,
         courses,

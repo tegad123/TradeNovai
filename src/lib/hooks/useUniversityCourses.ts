@@ -92,11 +92,15 @@ export function useUniversityCourses() {
   const createCourse = useCallback(async (data: {
     name: string
     code: string
+    access_code?: string
     description?: string
   }): Promise<Course | null> => {
     if (!user) return null
 
-    const course = await createCourseUtil(user.id, data)
+    const course = await createCourseUtil(user.id, {
+      ...data,
+      access_code: data.access_code ?? data.code,
+    })
     
     if (course) {
       // Refresh courses list

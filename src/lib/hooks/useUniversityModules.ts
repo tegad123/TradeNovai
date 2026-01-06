@@ -89,13 +89,13 @@ export function useUniversityModules(courseId: string | null) {
   }): Promise<Module | null> => {
     if (!courseId) return null
 
-    const module = await createModuleUtil(courseId, data)
+    const createdModule = await createModuleUtil(courseId, data)
     
-    if (module) {
+    if (createdModule) {
       await loadModules()
     }
 
-    return module
+    return createdModule
   }, [courseId, loadModules])
 
   // Update module (instructor only)

@@ -24,10 +24,6 @@ export async function uploadFile(
   }
 
   try {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storageUtils.ts:uploadFile:start',message:'storage upload start',data:{bucket:BUCKET_NAME,folder,hasUserId:!!userId,fileType:file.type,fileSize:file.size},timestamp:Date.now(),sessionId:'debug-session',runId:'storage-upload-v1',hypothesisId:'H7'})}).catch(()=>{});
-    // #endregion
-
     // Create unique filename
     const timestamp = Date.now()
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
@@ -41,9 +37,6 @@ export async function uploadFile(
       })
 
     if (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storageUtils.ts:uploadFile:error',message:'storage upload error',data:{bucket:BUCKET_NAME,path,message:error.message,name:(error as any).name||null,statusCode:(error as any).statusCode||null},timestamp:Date.now(),sessionId:'debug-session',runId:'storage-upload-v1',hypothesisId:'H7'})}).catch(()=>{});
-      // #endregion
       console.error('Upload error:', error)
       const hint = `Storage bucket "${BUCKET_NAME}" not found. Create it in Supabase Storage (Bucket name must match exactly).`
       const msg = error.message?.toLowerCase?.().includes('bucket') ? `${error.message} — ${hint}` : error.message
@@ -55,19 +48,12 @@ export async function uploadFile(
       .from(BUCKET_NAME)
       .getPublicUrl(data.path)
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storageUtils.ts:uploadFile:success',message:'storage upload success',data:{bucket:BUCKET_NAME,path:data.path,hasPublicUrl:!!publicUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'storage-upload-v1',hypothesisId:'H7'})}).catch(()=>{});
-    // #endregion
-
     return {
       success: true,
       url: publicUrl,
       path: data.path
     }
   } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storageUtils.ts:uploadFile:exception',message:'storage upload exception',data:{bucket:BUCKET_NAME,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'storage-upload-v1',hypothesisId:'H7'})}).catch(()=>{});
-    // #endregion
     console.error('Upload exception:', error)
     return { 
       success: false, 

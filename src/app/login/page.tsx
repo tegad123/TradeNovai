@@ -1,22 +1,37 @@
 "use client"
 
-import { useEffect, Suspense } from "react"
+import { useEffect, Suspense, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import Link from "next/link"
+
+type LoginProduct = "university" | "journal"
+const LOGIN_PRODUCT_KEY = "tradenova:loginProduct"
 
 function LoginContent() {
   const { user, loading, signInWithGoogle } = useSupabaseAuthContext()
   const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get("error")
+  const [product, setProduct] = useState<LoginProduct>("university")
 
-  // Redirect to chat if already logged in
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LOGIN_PRODUCT_KEY) as LoginProduct | null
+      if (stored === "journal" || stored === "university") setProduct(stored)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const nextPath = useMemo(() => (product === "journal" ? "/dashboard" : "/university"), [product])
+
+  // Redirect based on selected product if already logged in
   useEffect(() => {
     if (!loading && user) {
-      router.push("/chat")
+      router.push(nextPath)
     }
-  }, [user, loading, router])
+  }, [user, loading, router, nextPath])
 
   if (loading) {
     return (
@@ -39,7 +54,7 @@ function LoginContent() {
           </Link>
           <h1 className="text-2xl font-bold text-white mb-2">Welcome back</h1>
           <p className="text-[var(--text-muted)]">
-            Sign in to access your AI Coach and trading journal
+            Choose a product and sign in with Google
           </p>
         </div>
 
@@ -54,8 +69,46 @@ function LoginContent() {
 
         {/* Login card */}
         <div className="glass-card p-8">
+          <div className="mb-5">
+            <div className="flex rounded-xl bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setProduct("university")
+                  try { localStorage.setItem(LOGIN_PRODUCT_KEY, "university") } catch {}
+                }}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  product === "university"
+                    ? "bg-theme-gradient text-white shadow-lg"
+                    : "text-[var(--text-muted)] hover:text-white"
+                }`}
+              >
+                University
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProduct("journal")
+                  try { localStorage.setItem(LOGIN_PRODUCT_KEY, "journal") } catch {}
+                }}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  product === "journal"
+                    ? "bg-theme-gradient text-white shadow-lg"
+                    : "text-[var(--text-muted)] hover:text-white"
+                }`}
+              >
+                Journal <span className="ml-1 text-xs opacity-80">(Coming soon)</span>
+              </button>
+            </div>
+            {product === "journal" ? (
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                Journal is coming soon. You can sign in now, but you’ll land on a Coming Soon screen.
+              </p>
+            ) : null}
+          </div>
+
           <button
-            onClick={signInWithGoogle}
+            onClick={() => signInWithGoogle({ next: nextPath })}
             className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl bg-white text-gray-900 font-medium hover:bg-gray-100 transition-colors shadow-lg"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">

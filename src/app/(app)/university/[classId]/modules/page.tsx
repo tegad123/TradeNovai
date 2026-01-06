@@ -59,11 +59,6 @@ export default function ModulesPage() {
   const [updatingAccess, setUpdatingAccess] = useState(false)
   const [videoCompleted, setVideoCompleted] = useState(false)
   
-  // Demo students for easy testing
-  const DEMO_STUDENTS: UserProfile[] = [
-    { id: '00000000-0000-0000-0000-000000000001', full_name: 'Alex (Pro Student)', avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex' },
-    { id: '00000000-0000-0000-0000-000000000002', full_name: 'Sarah (Newbie Student)', avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah' }
-  ]
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -217,16 +212,7 @@ export default function ModulesPage() {
     // Fetch students and current assignments
     if (currentCourse?.id) {
       const realStudents = await getCourseStudents(currentCourse.id)
-      
-      // Merge with demo students if they aren't already there
-      const allStudents = [...realStudents]
-      DEMO_STUDENTS.forEach(demo => {
-        if (!allStudents.some(s => s.id === demo.id)) {
-          allStudents.push(demo)
-        }
-      })
-      
-      setCourseStudents(allStudents)
+      setCourseStudents(realStudents)
       
       const { getModuleAssignments: getAssignments } = await import("@/lib/supabase/universityUtils")
       const assignments = await getAssignments(moduleId)
@@ -238,27 +224,9 @@ export default function ModulesPage() {
     if (!accessModuleId || !currentCourse) return
     
     const isAssigned = assignedStudentIds.includes(studentId)
-    const isDemo = DEMO_STUDENTS.some(d => d.id === studentId)
     setUpdatingAccess(true)
     
     try {
-      // Auto-enroll demo students if needed
-      if (isDemo && !isAssigned) {
-        const { getUserRoleInCourse } = await import("@/lib/supabase/universityUtils")
-        // Check if demo user is actually enrolled
-        const role = await getUserRoleInCourse(studentId, currentCourse.id)
-        if (!role) {
-          // Manually enroll demo user via direct utility
-          const { createClientSafe } = await import("@/lib/supabase/browser")
-          const supabase = createClientSafe()
-          await supabase?.from('course_enrollments').insert({
-            user_id: studentId,
-            course_id: currentCourse.id,
-            role: 'student'
-          })
-        }
-      }
-
       if (isAssigned) {
         const success = await unassignModule(accessModuleId, studentId)
         if (success) {
@@ -292,8 +260,9 @@ export default function ModulesPage() {
       const result = await uploadLessonVideo(file, currentUser.id)
       
       if (result.success && result.url) {
-        await updateLesson(selectedLesson.id, { video_url: result.url })
-        setSelectedLesson(prev => prev ? { ...prev, video_url: result.url } : null)
+        const url = result.url
+        await updateLesson(selectedLesson.id, { video_url: url })
+        setSelectedLesson(prev => prev ? { ...prev, video_url: url } : null)
       } else {
         alert(result.error || 'Failed to upload video')
       }
@@ -346,8 +315,8 @@ export default function ModulesPage() {
     if (!createLessonModuleId) return
     if (!newLessonTitle.trim()) return
 
-    const module = modules.find(m => m.id === createLessonModuleId)
-    const lessonCount = module?.lessons?.length || 0
+    const moduleItem = modules.find(m => m.id === createLessonModuleId)
+    const lessonCount = moduleItem?.lessons?.length || 0
 
     setCreatingLesson(true)
 

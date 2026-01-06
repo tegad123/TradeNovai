@@ -53,15 +53,15 @@ export default function ProgressPage({ params }: PageProps) {
   const {
     lessons_completed = 0,
     total_lessons = 0,
-    assignments_submitted = 0,
+    assignments_completed = 0,
     total_assignments = 0,
-    trade_logs_count = 0,
+    trade_logs_submitted = 0,
     average_grade,
-    last_activity_at,
+    last_active,
   } = progress
 
   const lessonsProgress = total_lessons > 0 ? Math.round((lessons_completed / total_lessons) * 100) : 0
-  const assignmentsProgress = total_assignments > 0 ? Math.round((assignments_submitted / total_assignments) * 100) : 0
+  const assignmentsProgress = total_assignments > 0 ? Math.round((assignments_completed / total_assignments) * 100) : 0
   const overallProgress = Math.round((lessonsProgress + assignmentsProgress) / 2)
 
   return (
@@ -120,9 +120,9 @@ export default function ProgressPage({ params }: PageProps) {
                 {overallProgress === 100 && "Congratulations! You've completed the course!"}
               </p>
               
-              {last_activity_at && (
+              {last_active && (
                 <p className="text-sm text-[var(--text-muted)]">
-                  Last activity: {new Date(last_activity_at).toLocaleDateString('en-US', {
+                  Last activity: {new Date(last_active).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     hour: 'numeric',
@@ -169,7 +169,7 @@ export default function ProgressPage({ params }: PageProps) {
             </div>
             <div className="space-y-2">
               <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold text-white">{assignments_submitted}</span>
+                <span className="text-2xl font-bold text-white">{assignments_completed}</span>
                 <span className="text-sm text-[var(--text-muted)]">/ {total_assignments}</span>
               </div>
               <div className="h-2 rounded-full bg-white/10 overflow-hidden">
@@ -191,12 +191,12 @@ export default function ProgressPage({ params }: PageProps) {
               <span className="text-sm text-[var(--text-muted)]">Trade Logs</span>
             </div>
             <div className="space-y-2">
-              <span className="text-2xl font-bold text-white">{trade_logs_count}</span>
+              <span className="text-2xl font-bold text-white">{trade_logs_submitted}</span>
               <p className="text-xs text-[var(--text-muted)]">
-                {trade_logs_count === 0 && "No logs submitted yet"}
-                {trade_logs_count > 0 && trade_logs_count < 5 && "Keep logging your trades!"}
-                {trade_logs_count >= 5 && trade_logs_count < 10 && "Great consistency!"}
-                {trade_logs_count >= 10 && "Excellent trading discipline!"}
+                {trade_logs_submitted === 0 && "No logs submitted yet"}
+                {trade_logs_submitted > 0 && trade_logs_submitted < 5 && "Keep logging your trades!"}
+                {trade_logs_submitted >= 5 && trade_logs_submitted < 10 && "Great consistency!"}
+                {trade_logs_submitted >= 10 && "Excellent trading discipline!"}
               </p>
             </div>
           </GlassCard>
@@ -250,7 +250,7 @@ export default function ProgressPage({ params }: PageProps) {
               </div>
             )}
 
-            {assignments_submitted < total_assignments && (
+            {assignments_completed < total_assignments && (
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
                 <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
                   <FileText className="w-4 h-4 text-purple-400" />
@@ -258,14 +258,14 @@ export default function ProgressPage({ params }: PageProps) {
                 <div className="flex-1">
                   <p className="text-sm text-white">Complete assignments</p>
                   <p className="text-xs text-[var(--text-muted)]">
-                    {total_assignments - assignments_submitted} assignment{total_assignments - assignments_submitted !== 1 ? 's' : ''} pending
+                    {total_assignments - assignments_completed} assignment{total_assignments - assignments_completed !== 1 ? 's' : ''} pending
                   </p>
                 </div>
                 <Clock className="w-4 h-4 text-[var(--text-muted)]" />
               </div>
             )}
 
-            {trade_logs_count < 5 && (
+            {trade_logs_submitted < 5 && (
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
                 <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
                   <LineChart className="w-4 h-4 text-green-400" />
@@ -288,7 +288,7 @@ export default function ProgressPage({ params }: PageProps) {
                 <div className="flex-1">
                   <p className="text-sm text-green-400 font-medium">Course Completed!</p>
                   <p className="text-xs text-green-400/70">
-                    You've finished all lessons and assignments
+                    You&apos;ve finished all lessons and assignments
                   </p>
                 </div>
               </div>

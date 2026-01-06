@@ -198,6 +198,7 @@ export async function createCourse(
   data: {
     name: string
     code: string
+    access_code: string
     description?: string
     cover_image_url?: string
   }
@@ -205,8 +206,10 @@ export async function createCourse(
   const supabase = getClient()
   if (!supabase) throw new Error("Supabase client not initialized (missing env vars or client init failed).")
 
-  // Generate access code
-  const accessCode = `${data.code.toUpperCase()}${Date.now().toString(36).toUpperCase()}`
+  const accessCode = data.access_code.trim()
+  if (!accessCode) {
+    throw new Error("createCourse failed: access_code is required")
+  }
 
   const { data: course, error } = await supabase
     .from('courses')
@@ -611,23 +614,51 @@ export async function createAssignment(
   const supabase = getClient()
   if (!supabase) return null
 
-  const { data: assignment, error } = await supabase
+  const insertPayload = {
+    course_id: courseId,
+    title: data.title,
+    description: data.description || null,
+    due_date: data.due_date || null,
+    points: data.points || 100,
+    type: data.type || 'reflection',
+    attachments: data.attachments || [],
+    is_restricted: data.is_restricted || false,
+    is_published: false
+  }
+
+  let { data: assignment, error } = await supabase
     .from('assignments')
-    .insert({
-      course_id: courseId,
-      title: data.title,
-      description: data.description || null,
-      due_date: data.due_date || null,
-      points: data.points || 100,
-      type: data.type || 'reflection',
-      attachments: data.attachments || [],
-      is_restricted: data.is_restricted || false,
-      is_published: false
-    })
+    .insert(insertPayload)
     .select()
     .single()
 
   if (error) {
+    // If the DB is missing newer columns (migration not applied), retry without them.
+    // This keeps assignment creation working (attachments/features will be disabled until migration runs).
+    const isMissingColumn =
+      (error as any)?.code === 'PGRST204' &&
+      typeof error.message === 'string' &&
+      (error.message.includes("'attachments'") || error.message.includes("'is_restricted'"))
+
+    if (isMissingColumn) {
+      const legacyPayload: any = { ...insertPayload }
+      delete legacyPayload.attachments
+      delete legacyPayload.is_restricted
+
+      const retry = await supabase
+        .from('assignments')
+        .insert(legacyPayload)
+        .select()
+        .single()
+
+      assignment = retry.data as any
+      error = retry.error as any
+
+      if (!error) {
+        return assignment
+      }
+    }
+
     console.error('Error creating assignment:', error)
     throw new Error(`createAssignment failed: ${error.message}`)
   }
@@ -910,7 +941,10 @@ export async function createThread(
     user_id: userId
   }))
 
-  await supabase.from('thread_participants').insert(participantInserts)
+  const participantsInsert = await supabase.from('thread_participants').insert(participantInserts)
+  if (participantsInsert.error) {
+    console.error('Error adding thread participants:', participantsInsert.error)
+  }
 
   return thread
 }
@@ -1446,12 +1480,31 @@ export async function updateAssignment(
   const supabase = getClient()
   if (!supabase) return false
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('assignments')
     .update(data)
     .eq('id', assignmentId)
 
   if (error) {
+    const isMissingColumn =
+      (error as any)?.code === 'PGRST204' &&
+      typeof error.message === 'string' &&
+      (error.message.includes("'attachments'") || error.message.includes("'is_restricted'"))
+
+    if (isMissingColumn) {
+      const legacyData: any = { ...data }
+      delete legacyData.attachments
+      delete legacyData.is_restricted
+
+      const retry = await supabase
+        .from('assignments')
+        .update(legacyData)
+        .eq('id', assignmentId)
+
+      if (!retry.error) return true
+      error = retry.error as any
+    }
+
     console.error('Error updating assignment:', error)
     return false
   }

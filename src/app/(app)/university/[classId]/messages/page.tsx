@@ -46,7 +46,8 @@ export default function MessagesPage() {
     setSelectedThread,
     sendMessage,
     createThread,
-    getUnreadCount
+    getUnreadCount,
+    error: messagesError,
   } = useUniversityMessages(currentCourse?.id || null)
 
   // Load available recipients for new thread
@@ -85,6 +86,7 @@ export default function MessagesPage() {
     if (!newMessage.trim()) return
     
     setSendingMessage(true)
+
     const success = await sendMessage(newMessage)
     
     if (success) {
@@ -98,11 +100,16 @@ export default function MessagesPage() {
     
     setCreatingThread(true)
     const thread = await createThread(newThreadSubject, selectedParticipants)
-    
+
     if (thread) {
       setShowNewThreadModal(false)
       setNewThreadSubject("")
       setSelectedParticipants([])
+    } else {
+      alert(
+        'Failed to create message thread. This is usually caused by Supabase RLS policy recursion on thread_participants.\n\n' +
+          'Fix: run `supabase/migrations/007_fix_messaging_rls_recursion.sql` in Supabase SQL editor.'
+      )
     }
     setCreatingThread(false)
   }
@@ -139,6 +146,12 @@ export default function MessagesPage() {
   return (
     <PageContainer>
       <div className="space-y-6">
+        {messagesError && (
+          <GlassCard className="p-4 border border-red-500/20 bg-red-500/10">
+            <p className="text-sm text-red-300 whitespace-pre-wrap">{messagesError}</p>
+          </GlassCard>
+        )}
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>

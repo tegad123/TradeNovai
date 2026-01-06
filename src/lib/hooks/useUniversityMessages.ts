@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSupabaseAuthContext } from '@/lib/contexts/SupabaseAuthContext'
 import { createClientSafe } from '@/lib/supabase/browser'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import {
   getThreadsByCourse,
   getMessagesByThread,
@@ -23,7 +24,7 @@ export function useUniversityMessages(courseId: string | null) {
   const [error, setError] = useState<string | null>(null)
   
   // Store subscription ref for cleanup
-  const subscriptionRef = useRef<ReturnType<typeof createClientSafe>['channel'] extends (name: string) => infer R ? R : never | null>(null)
+  const subscriptionRef = useRef<RealtimeChannel | null>(null)
 
   // Load threads
   const loadThreads = useCallback(async () => {
@@ -131,6 +132,7 @@ export function useUniversityMessages(courseId: string | null) {
       return true
     }
 
+    setError("Failed to send message")
     return false
   }, [user, selectedThread, loadThreads])
 
@@ -142,7 +144,7 @@ export function useUniversityMessages(courseId: string | null) {
     if (!user || !courseId) return null
 
     const thread = await createThreadUtil(courseId, user.id, subject, participantIds)
-    
+
     if (thread) {
       await loadThreads()
       setSelectedThread(thread)

@@ -32,7 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { useUniversityAssignments } from "@/lib/hooks/useUniversityAssignments"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
-import { uploadFile } from "@/lib/supabase/storageUtils"
+import { uploadAttachment, uploadFile } from "@/lib/supabase/storageUtils"
 import { 
   getCourseStudents, 
   getAssignmentTargets, 
@@ -166,7 +166,7 @@ export default function AssignmentsPage({ params }: PageProps) {
     // Upload file if present
     if (submissionFile) {
       setUploadingFile(true)
-      const result = await uploadFile(submissionFile, currentUser.id, 'submissions')
+      const result = await uploadAttachment(submissionFile, currentUser.id)
       setUploadingFile(false)
       
       if (result.success && result.url) {
@@ -210,7 +210,7 @@ export default function AssignmentsPage({ params }: PageProps) {
       if (attachmentFiles.length > 0) {
         setUploadingAttachments(true)
         for (const file of attachmentFiles) {
-          const result = await uploadFile(file, currentUser.id, 'assignments')
+          const result = await uploadAttachment(file, currentUser.id)
           if (result.success && result.url) {
             attachmentUrls.push(result.url)
           }

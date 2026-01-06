@@ -48,16 +48,17 @@ export function useSupabaseAuth() {
     }
   }, [supabase])
 
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithGoogle = useCallback(async (options?: { next?: string }) => {
     if (!supabase) {
       console.error("Supabase is not configured")
       return
     }
     
+    const next = options?.next && options.next.startsWith("/") ? options.next : "/university"
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     })
     if (error) {

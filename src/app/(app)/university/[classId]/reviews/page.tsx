@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
 import { useUniversityAssignments } from "@/lib/hooks/useUniversityAssignments"
 import { useUniversityTradeLogs } from "@/lib/hooks/useUniversityTradeLogs"
-import type { Submission, TradeLog } from "@/lib/university/types"
+import type { Submission, UniversityTradeLog } from "@/lib/supabase/universityUtils"
 
 interface PageProps {
   params: { classId: string }
@@ -43,7 +43,7 @@ export default function ReviewsPage({ params }: PageProps) {
 
   const [activeTab, setActiveTab] = useState<ReviewTab>('assignments')
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
-  const [selectedTradeLog, setSelectedTradeLog] = useState<TradeLog | null>(null)
+  const [selectedTradeLog, setSelectedTradeLog] = useState<UniversityTradeLog | null>(null)
   const [grade, setGrade] = useState<number | ''>('')
   const [feedback, setFeedback] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -287,7 +287,7 @@ export default function ReviewsPage({ params }: PageProps) {
             <div className="p-4 space-y-4">
               {/* Student's Submission */}
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">Student's Submission</h3>
+                <h3 className="text-sm font-medium text-white mb-2">Student&apos;s Submission</h3>
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-white whitespace-pre-wrap">{selectedSubmission.content}</p>
                 </div>
@@ -372,14 +372,14 @@ export default function ReviewsPage({ params }: PageProps) {
             <div className="p-4 space-y-4">
               {/* Student's Reflection */}
               <div>
-                <h3 className="text-sm font-medium text-white mb-2">Student's Reflection</h3>
+                <h3 className="text-sm font-medium text-white mb-2">Student&apos;s Reflection</h3>
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-white whitespace-pre-wrap">{selectedTradeLog.reflection}</p>
                 </div>
               </div>
 
               {/* Screenshots */}
-              {(selectedTradeLog.screenshot_url || (selectedTradeLog.screenshot_urls && selectedTradeLog.screenshot_urls.length > 0)) && (
+              {(selectedTradeLog.screenshot_url || (selectedTradeLog.screenshots && selectedTradeLog.screenshots.length > 0)) && (
                 <div>
                   <h3 className="text-sm font-medium text-white mb-2">Screenshots</h3>
                   <div className="flex gap-2 flex-wrap">
@@ -394,7 +394,7 @@ export default function ReviewsPage({ params }: PageProps) {
                         <img src={selectedTradeLog.screenshot_url} alt="Trade screenshot" className="max-w-xs h-auto object-cover" />
                       </a>
                     )}
-                    {selectedTradeLog.screenshot_urls?.map((url, i) => (
+                    {selectedTradeLog.screenshots?.map((url, i) => (
                       <a
                         key={i}
                         href={url}

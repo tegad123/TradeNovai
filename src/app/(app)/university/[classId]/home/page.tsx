@@ -24,6 +24,8 @@ export default function CourseHomePage() {
   const classId = params.classId as string
   const { currentCourse, currentRole } = useUniversity()
 
+  // (debug instrumentation removed)
+
   // Load real data from Supabase
   const { modules, progressPercent, loading: modulesLoading } = useUniversityModules(currentCourse?.id || null)
   const { assignments, loading: assignmentsLoading } = useUniversityAssignments(currentCourse?.id || null, currentRole)
