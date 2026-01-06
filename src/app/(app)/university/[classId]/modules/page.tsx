@@ -59,6 +59,12 @@ export default function ModulesPage() {
   const [updatingAccess, setUpdatingAccess] = useState(false)
   const [videoCompleted, setVideoCompleted] = useState(false)
   
+  // Post-create publish dialog state
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const [pendingModuleId, setPendingModuleId] = useState<string | null>(null)
+  const [publishStep, setPublishStep] = useState<'choose' | 'select-students'>('choose')
+  const [publishingModule, setPublishingModule] = useState(false)
+  
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -300,14 +306,77 @@ export default function ModulesPage() {
         return
       }
 
+      // Close create dialog and open publish dialog
       setCreateModuleOpen(false)
       setNewModuleTitle("")
       setNewModuleDescription("")
+      
+      // Open publish dialog for the newly created module
+      setPendingModuleId(result.id)
+      setPublishStep('choose')
+      setPublishDialogOpen(true)
+      
+      // Pre-fetch students for potential restricted access selection
+      const students = await getCourseStudents(currentCourse.id)
+      setCourseStudents(students)
+      setAssignedStudentIds([])
     } catch (err) {
       alert(`Error creating module: ${String(err)}`)
     } finally {
       setCreatingModule(false)
     }
+  }
+  
+  // Handle publish dialog actions
+  const handlePublishToAll = async () => {
+    if (!pendingModuleId) return
+    setPublishingModule(true)
+    
+    try {
+      await updateModule(pendingModuleId, { is_published: true, is_restricted: false } as any)
+      setPublishDialogOpen(false)
+      setPendingModuleId(null)
+    } catch (err) {
+      alert(`Error publishing module: ${String(err)}`)
+    } finally {
+      setPublishingModule(false)
+    }
+  }
+  
+  const handleRestrictAccess = () => {
+    // Move to student selection step
+    setPublishStep('select-students')
+  }
+  
+  const handleFinishRestricted = async () => {
+    if (!pendingModuleId) return
+    setPublishingModule(true)
+    
+    try {
+      // Set module as published + restricted
+      await updateModule(pendingModuleId, { is_published: true, is_restricted: true } as any)
+      
+      // Assign selected students
+      for (const studentId of assignedStudentIds) {
+        await assignModule(pendingModuleId, studentId)
+      }
+      
+      setPublishDialogOpen(false)
+      setPendingModuleId(null)
+      setAssignedStudentIds([])
+    } catch (err) {
+      alert(`Error setting restricted access: ${String(err)}`)
+    } finally {
+      setPublishingModule(false)
+    }
+  }
+  
+  const handleToggleStudentForNewModule = (studentId: string) => {
+    setAssignedStudentIds(prev => 
+      prev.includes(studentId) 
+        ? prev.filter(id => id !== studentId)
+        : [...prev, studentId]
+    )
   }
 
   const openCreateLesson = (moduleId: string) => {
@@ -814,6 +883,112 @@ export default function ModulesPage() {
               Done
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post-create publish dialog */}
+      <Dialog open={publishDialogOpen} onOpenChange={(open) => {
+        if (!open && !publishingModule) {
+          setPublishDialogOpen(false)
+          setPendingModuleId(null)
+          setPublishStep('choose')
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {publishStep === 'choose' ? 'Publish Module' : 'Select Students'}
+            </DialogTitle>
+            <DialogDescription>
+              {publishStep === 'choose' 
+                ? 'Choose how students will access this module.'
+                : 'Select which students can access this module.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {publishStep === 'choose' ? (
+            <div className="mt-4 space-y-3">
+              <button
+                onClick={handlePublishToAll}
+                disabled={publishingModule}
+                className="w-full p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-white">Publish to all students</div>
+                    <div className="text-xs text-[var(--text-muted)]">
+                      All enrolled students will see this module
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={handleRestrictAccess}
+                disabled={publishingModule}
+                className="w-full p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-white">Restrict to specific students</div>
+                    <div className="text-xs text-[var(--text-muted)]">
+                      Only selected students will see this module
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {courseStudents.length > 0 ? (
+                  courseStudents.map(student => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-theme-gradient flex items-center justify-center text-xs font-bold text-white uppercase">
+                          {student.full_name?.charAt(0) || student.id.charAt(0)}
+                        </div>
+                        <span className="text-sm text-white font-medium">
+                          {student.full_name || 'Student'}
+                        </span>
+                      </div>
+                      <Switch
+                        checked={assignedStudentIds.includes(student.id)}
+                        onCheckedChange={() => handleToggleStudentForNewModule(student.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-4">
+                    No students enrolled yet.
+                  </p>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button variant="glass" onClick={() => setPublishStep('choose')} disabled={publishingModule}>
+                  Back
+                </Button>
+                <Button
+                  variant="glass-theme"
+                  onClick={handleFinishRestricted}
+                  disabled={publishingModule || assignedStudentIds.length === 0}
+                >
+                  {publishingModule ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Publish ({assignedStudentIds.length} selected)
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </PageContainer>

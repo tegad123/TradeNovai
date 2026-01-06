@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Loader2,
   GraduationCap,
+  RefreshCw,
 } from "lucide-react"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
@@ -27,11 +28,17 @@ export default function InstructorDashboardPage({ params }: PageProps) {
   const { classId } = params
   const router = useRouter()
   const { currentRole } = useUniversity()
-  const { allStudentsProgress, loading: progressLoading } = useUniversityProgress(classId, currentRole)
-  const { submissions, loading: assignmentsLoading } = useUniversityAssignments(classId, currentRole)
-  const { tradeLogs, isLoading: logsLoading } = useUniversityTradeLogs(classId, currentRole)
+  const { allStudentsProgress, loading: progressLoading, refresh: refreshProgress } = useUniversityProgress(classId, currentRole)
+  const { submissions, loading: assignmentsLoading, refresh: refreshAssignments } = useUniversityAssignments(classId, currentRole)
+  const { tradeLogs, isLoading: logsLoading, refresh: refreshTradeLogs } = useUniversityTradeLogs(classId, currentRole)
 
   const isLoading = progressLoading || assignmentsLoading || logsLoading
+
+  const handleRefresh = () => {
+    refreshProgress()
+    refreshAssignments()
+    refreshTradeLogs()
+  }
 
   // Gate for non-instructors: Students should not access instructor dashboard
   if (currentRole !== 'instructor') {
@@ -68,7 +75,7 @@ export default function InstructorDashboardPage({ params }: PageProps) {
   // Compute stats
   const totalStudents = allStudentsProgress.length
   const pendingSubmissions = submissions.filter(s => s.status === 'submitted').length
-  const pendingTradeLogs = tradeLogs.filter(l => !l.feedback).length
+  const pendingTradeLogs = tradeLogs.filter(l => !l.instructor_feedback).length
 
   const avgProgress = totalStudents > 0
     ? Math.round(
@@ -87,18 +94,24 @@ export default function InstructorDashboardPage({ params }: PageProps) {
 
   // Recent trade logs to review (last 5)
   const recentPendingLogs = tradeLogs
-    .filter(l => !l.feedback)
+    .filter(l => !l.instructor_feedback)
     .slice(0, 5)
 
   return (
     <PageContainer>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-white">Instructor Dashboard</h1>
-          <p className="text-[var(--text-muted)]">
-            Monitor student progress and review submissions
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Instructor Dashboard</h1>
+            <p className="text-[var(--text-muted)]">
+              Monitor student progress and review submissions
+            </p>
+          </div>
+          <Button variant="glass" size="sm" onClick={handleRefresh} disabled={isLoading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
 
         {/* Stats Grid */}

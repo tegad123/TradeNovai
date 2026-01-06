@@ -83,6 +83,12 @@ export default function AssignmentsPage({ params }: PageProps) {
   const [assignedStudentIds, setAssignedStudentIds] = useState<string[]>([])
   const [updatingAccess, setUpdatingAccess] = useState(false)
   
+  // Post-create publish dialog state
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const [pendingAssignmentId, setPendingAssignmentId] = useState<string | null>(null)
+  const [publishStep, setPublishStep] = useState<'choose' | 'select-students'>('choose')
+  const [publishingAssignment, setPublishingAssignment] = useState(false)
+  
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
 
@@ -201,7 +207,7 @@ export default function AssignmentsPage({ params }: PageProps) {
   }
 
   const handleCreate = async () => {
-    if (!newTitle.trim() || !currentUser) return
+    if (!newTitle.trim() || !currentUser || !currentCourse) return
     setCreating(true)
 
     try {
@@ -233,17 +239,82 @@ export default function AssignmentsPage({ params }: PageProps) {
         return
       }
 
+      // Close create dialog and open publish dialog
       setCreateOpen(false)
       setNewTitle("")
       setNewDescription("")
       setNewDueDate("")
       setNewPoints("100")
       setAttachmentFiles([])
+      
+      // Open publish dialog for the newly created assignment
+      setPendingAssignmentId(assignment.id)
+      setPublishStep('choose')
+      setPublishDialogOpen(true)
+      
+      // Pre-fetch students for potential restricted access selection
+      const students = await getCourseStudents(currentCourse.id)
+      setCourseStudents(students)
+      setAssignedStudentIds([])
     } catch (err) {
       alert(`Error creating assignment: ${String(err)}`)
     } finally {
       setCreating(false)
     }
+  }
+  
+  // Handle publish dialog actions for assignments
+  const handlePublishAssignmentToAll = async () => {
+    if (!pendingAssignmentId) return
+    setPublishingAssignment(true)
+    
+    try {
+      await updateAssignment(pendingAssignmentId, { is_published: true, is_restricted: false })
+      refetch()
+      setPublishDialogOpen(false)
+      setPendingAssignmentId(null)
+    } catch (err) {
+      alert(`Error publishing assignment: ${String(err)}`)
+    } finally {
+      setPublishingAssignment(false)
+    }
+  }
+  
+  const handleRestrictAssignmentAccess = () => {
+    // Move to student selection step
+    setPublishStep('select-students')
+  }
+  
+  const handleFinishRestrictedAssignment = async () => {
+    if (!pendingAssignmentId) return
+    setPublishingAssignment(true)
+    
+    try {
+      // Set assignment as published + restricted
+      await updateAssignment(pendingAssignmentId, { is_published: true, is_restricted: true })
+      
+      // Assign selected students
+      for (const studentId of assignedStudentIds) {
+        await assignAssignmentToStudent(pendingAssignmentId, studentId)
+      }
+      
+      refetch()
+      setPublishDialogOpen(false)
+      setPendingAssignmentId(null)
+      setAssignedStudentIds([])
+    } catch (err) {
+      alert(`Error setting restricted access: ${String(err)}`)
+    } finally {
+      setPublishingAssignment(false)
+    }
+  }
+  
+  const handleToggleStudentForNewAssignment = (studentId: string) => {
+    setAssignedStudentIds(prev => 
+      prev.includes(studentId) 
+        ? prev.filter(id => id !== studentId)
+        : [...prev, studentId]
+    )
   }
 
   const handleOpenManageAccess = async (assignmentId: string) => {
@@ -776,6 +847,112 @@ export default function AssignmentsPage({ params }: PageProps) {
               Done
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post-create publish dialog */}
+      <Dialog open={publishDialogOpen} onOpenChange={(open) => {
+        if (!open && !publishingAssignment) {
+          setPublishDialogOpen(false)
+          setPendingAssignmentId(null)
+          setPublishStep('choose')
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {publishStep === 'choose' ? 'Publish Assignment' : 'Select Students'}
+            </DialogTitle>
+            <DialogDescription>
+              {publishStep === 'choose' 
+                ? 'Choose how students will access this assignment.'
+                : 'Select which students can access this assignment.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {publishStep === 'choose' ? (
+            <div className="mt-4 space-y-3">
+              <button
+                onClick={handlePublishAssignmentToAll}
+                disabled={publishingAssignment}
+                className="w-full p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-white">Publish to all students</div>
+                    <div className="text-xs text-[var(--text-muted)]">
+                      All enrolled students will see this assignment
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={handleRestrictAssignmentAccess}
+                disabled={publishingAssignment}
+                className="w-full p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-white">Restrict to specific students</div>
+                    <div className="text-xs text-[var(--text-muted)]">
+                      Only selected students will see this assignment
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {courseStudents.length > 0 ? (
+                  courseStudents.map(student => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-theme-gradient flex items-center justify-center text-xs font-bold text-white uppercase">
+                          {student.full_name?.charAt(0) || 'S'}
+                        </div>
+                        <span className="text-sm text-white font-medium">
+                          {student.full_name || 'Student'}
+                        </span>
+                      </div>
+                      <Switch
+                        checked={assignedStudentIds.includes(student.id)}
+                        onCheckedChange={() => handleToggleStudentForNewAssignment(student.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-4">
+                    No students enrolled yet.
+                  </p>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button variant="glass" onClick={() => setPublishStep('choose')} disabled={publishingAssignment}>
+                  Back
+                </Button>
+                <Button
+                  variant="glass-theme"
+                  onClick={handleFinishRestrictedAssignment}
+                  disabled={publishingAssignment || assignedStudentIds.length === 0}
+                >
+                  {publishingAssignment ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Publish ({assignedStudentIds.length} selected)
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </PageContainer>

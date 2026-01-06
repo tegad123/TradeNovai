@@ -1235,10 +1235,11 @@ export async function getStudentProgress(
     .select('grade, status')
     .eq('student_id', userId)
     .in('assignment_id', assignmentIds.length > 0 ? assignmentIds : ['none'])
-    .eq('status', 'graded')
+    .in('status', ['submitted', 'graded'])
 
   const assignmentsCompleted = submissions?.length || 0
-  const grades = submissions?.filter(s => s.grade !== null).map(s => s.grade as number) || []
+  // Only graded submissions contribute to average grade
+  const grades = submissions?.filter(s => s.status === 'graded' && s.grade !== null).map(s => s.grade as number) || []
   const averageGrade = grades.length > 0
     ? Math.round(grades.reduce((a, b) => a + b, 0) / grades.length)
     : 0
