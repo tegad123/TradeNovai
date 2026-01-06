@@ -55,6 +55,9 @@ export function useSupabaseAuth() {
     }
     
     const next = options?.next && options.next.startsWith("/") ? options.next : "/university"
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSupabaseAuth.ts:signInWithGoogle',message:'starting google oauth',data:{href:window.location.href,origin:window.location.origin,next},timestamp:Date.now(),sessionId:'debug-session',runId:'oauth-domain-v1',hypothesisId:'O1'})}).catch(()=>{});
+    // #endregion
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
