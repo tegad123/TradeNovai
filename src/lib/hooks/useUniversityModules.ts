@@ -35,15 +35,9 @@ export function useUniversityModules(courseId: string | null) {
       setLoading(true)
       const data = await getModulesWithProgress(courseId, user.id)
       setModules(data)
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useUniversityModules.ts:loadModules:success',message:'loaded modules with progress',data:{courseIdTail:courseId.slice(-6),userIdTail:user.id.slice(-6),modulesCount:data.length,publishedCount:data.filter(m=>m.is_published).length,restrictedCount:data.filter(m=>m.is_restricted).length},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
     } catch (err) {
       console.error('Error loading modules:', err)
       setError('Failed to load modules')
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useUniversityModules.ts:loadModules:error',message:'loadModules threw',data:{courseIdTail:courseId.slice(-6),hasUser:!!user},timestamp:Date.now(),sessionId:'debug-session',runId:'module-assign-v1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
     } finally {
       setLoading(false)
     }

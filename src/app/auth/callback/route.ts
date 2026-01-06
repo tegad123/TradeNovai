@@ -19,43 +19,7 @@ export async function GET(request: Request) {
       const xfProto = request.headers.get("x-forwarded-proto")
       const proto = xfProto || url.protocol.replace(":", "") || "https"
       const target = `${proto}://${host}${next}`
-
-      // Return small HTML that logs the redirect decision to the local debug ingest (client-side),
-      // then navigates to the computed target.
-      const html = `<!doctype html>
-<html>
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
-  <body>
-    <script>
-      try {
-        fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          location:'auth/callback/route.ts:clientRedirect',
-          message:'oauth callback redirect decision',
-          data:{
-            href: window.location.href,
-            serverRequestUrl: ${JSON.stringify(request.url)},
-            urlHost: ${JSON.stringify(url.host)},
-            headerHost: ${JSON.stringify(request.headers.get("host"))},
-            xForwardedHost: ${JSON.stringify(xfHost)},
-            xForwardedProto: ${JSON.stringify(xfProto)},
-            computedTarget: ${JSON.stringify(target)},
-            next: ${JSON.stringify(next)}
-          },
-          timestamp: Date.now(),
-          sessionId:'debug-session',
-          runId:'oauth-domain-v1',
-          hypothesisId:'O2'
-        })}).catch(function(){});
-      } catch (e) {}
-      window.location.replace(${JSON.stringify(target)});
-    </script>
-  </body>
-</html>`
-
-      return new NextResponse(html, {
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      })
+      return NextResponse.redirect(target)
     }
   }
 
