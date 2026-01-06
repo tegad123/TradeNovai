@@ -76,7 +76,7 @@ export default function ReviewsPage({ params }: PageProps) {
   }
 
   const pendingSubmissions = submissions.filter(s => s.status === 'submitted')
-  const pendingTradeLogs = tradeLogs.filter(l => !l.feedback)
+  const pendingTradeLogs = tradeLogs.filter(l => !l.instructor_feedback)
 
   const handleGradeSubmission = async () => {
     if (!selectedSubmission || grade === '' || !feedback.trim()) return

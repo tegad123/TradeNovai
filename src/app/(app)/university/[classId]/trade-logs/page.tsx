@@ -96,6 +96,8 @@ export default function TradeLogsPage({ params }: PageProps) {
       setReflection("")
       setTradeDate(new Date().toISOString().split('T')[0])
       clearScreenshot()
+    } else {
+      alert('Failed to submit trade log. Please try again.')
     }
     
     setIsSubmitting(false)

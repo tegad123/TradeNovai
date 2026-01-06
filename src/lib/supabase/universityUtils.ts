@@ -1587,21 +1587,47 @@ export async function submitAssignmentWithFile(
   const now = new Date()
   const isLate = assignment?.due_date ? new Date(assignment.due_date) < now : false
 
-  const { data, error } = await supabase
+  // Build base payload with only core columns that definitely exist
+  const upsertPayload: Record<string, unknown> = {
+    assignment_id: assignmentId,
+    student_id: studentId,
+    content,
+    submitted_at: now.toISOString(),
+    status: 'submitted'
+  }
+  
+  // Optional columns that may not exist in older schemas (from 006_assignments_enhancements.sql)
+  // We'll try with them first, then fallback without them if needed
+  const optionalFields: Record<string, unknown> = {}
+  if (fileUrl) {
+    optionalFields.file_url = fileUrl
+  }
+  optionalFields.is_late = isLate
+  
+  // First attempt: try with all fields including optional ones
+  const fullPayload = { ...upsertPayload, ...optionalFields }
+
+  let { data, error } = await supabase
     .from('submissions')
-    .upsert({
-      assignment_id: assignmentId,
-      student_id: studentId,
-      content,
-      file_url: fileUrl || null,
-      submitted_at: now.toISOString(),
-      status: 'submitted',
-      is_late: isLate
-    }, {
+    .upsert(fullPayload, {
       onConflict: 'assignment_id,student_id'
     })
     .select()
     .single()
+
+  // Fallback: If column doesn't exist (PGRST204), retry without optional columns
+  if (error?.code === 'PGRST204') {
+    // Retry with only base columns
+    const retryResult = await supabase
+      .from('submissions')
+      .upsert(upsertPayload, {
+        onConflict: 'assignment_id,student_id'
+      })
+      .select()
+      .single()
+    data = retryResult.data
+    error = retryResult.error
+  }
 
   if (error) {
     console.error('Error submitting assignment:', error)
@@ -1806,21 +1832,29 @@ export async function submitTradeLogWithScreenshot(
   const supabase = getClient()
   if (!supabase) return null
 
+  // Build screenshots array - combine screenshot_url into screenshots array
+  // The DB schema only has `screenshots` (JSONB), not `screenshot_url`
+  const screenshotsArray: string[] = data.screenshots ? [...data.screenshots] : []
+  if (data.screenshot_url && !screenshotsArray.includes(data.screenshot_url)) {
+    screenshotsArray.push(data.screenshot_url)
+  }
+
+  const insertPayload = {
+    course_id: courseId,
+    student_id: studentId,
+    trade_date: data.trade_date,
+    symbol: data.symbol,
+    side: data.side,
+    entry_price: data.entry_price,
+    exit_price: data.exit_price,
+    pnl: data.pnl,
+    reflection: data.reflection,
+    screenshots: screenshotsArray
+  }
+
   const { data: log, error } = await supabase
     .from('university_trade_logs')
-    .insert({
-      course_id: courseId,
-      student_id: studentId,
-      trade_date: data.trade_date,
-      symbol: data.symbol,
-      side: data.side,
-      entry_price: data.entry_price,
-      exit_price: data.exit_price,
-      pnl: data.pnl,
-      reflection: data.reflection,
-      screenshot_url: data.screenshot_url || null,
-      screenshots: data.screenshots || []
-    })
+    .insert(insertPayload)
     .select()
     .single()
 

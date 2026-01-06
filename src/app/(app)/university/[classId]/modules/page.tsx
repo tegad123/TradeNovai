@@ -514,6 +514,18 @@ export default function ModulesPage() {
         return
       }
 
+      // #region agent log
+      console.log('[DEBUG] Lesson created:', { lessonId: lesson.id, lessonTitle: lesson.title, hasVideoUrl: !!lesson.video_url, videoUrl: lesson.video_url });
+      // #endregion
+
+      // Auto-select the newly created lesson so user can immediately add video
+      setSelectedLesson(lesson)
+      
+      // Expand the module if not already
+      if (!expandedModules.includes(createLessonModuleId)) {
+        setExpandedModules(prev => [...prev, createLessonModuleId])
+      }
+
       setCreateLessonOpen(false)
       setCreateLessonModuleId(null)
       setNewLessonTitle("")
@@ -734,6 +746,9 @@ export default function ModulesPage() {
                     </div>
 
                     {/* Video player or placeholder */}
+                    {/* #region agent log */}
+                    {(() => { console.log('[DEBUG] Video section:', { hasSelectedLesson: !!selectedLesson, lessonId: selectedLesson?.id, lessonTitle: selectedLesson?.title, hasVideoUrl: !!selectedLesson?.video_url, videoUrl: selectedLesson?.video_url, isInstructor, currentRole }); return null; })()}
+                    {/* #endregion */}
                     <div className="relative group aspect-video rounded-xl bg-black/50 flex items-center justify-center overflow-hidden">
                       {selectedLesson.video_url ? (
                         <>
