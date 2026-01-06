@@ -16,6 +16,8 @@ import {
   Users,
   Settings2,
   ArrowRight,
+  Link2,
+  ExternalLink,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
@@ -35,6 +37,83 @@ import { uploadLessonVideo } from "@/lib/supabase/storageUtils"
 import { getCourseStudents, type Lesson, type UserProfile } from "@/lib/supabase/universityUtils"
 import { Switch } from "@/components/ui/switch"
 
+// Helper to detect video provider from URL
+function getVideoProvider(url: string): 'youtube' | 'vimeo' | 'direct' | null {
+  if (!url) return null
+  
+  const lowerUrl = url.toLowerCase()
+  
+  // YouTube patterns
+  if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+    return 'youtube'
+  }
+  
+  // Vimeo patterns
+  if (lowerUrl.includes('vimeo.com')) {
+    return 'vimeo'
+  }
+  
+  // Direct video file (mp4, webm, etc.)
+  if (lowerUrl.match(/\.(mp4|webm|ogg|mov)(\?|$)/i)) {
+    return 'direct'
+  }
+  
+  // Default to direct for uploaded videos or unknown
+  return 'direct'
+}
+
+// Extract video ID and return embed URL
+function getEmbedUrl(url: string): string | null {
+  if (!url) return null
+  
+  const provider = getVideoProvider(url)
+  
+  if (provider === 'youtube') {
+    // Handle various YouTube URL formats
+    // youtube.com/watch?v=VIDEO_ID
+    // youtu.be/VIDEO_ID
+    // youtube.com/embed/VIDEO_ID
+    let videoId = ''
+    
+    if (url.includes('youtu.be/')) {
+      videoId = url.split('youtu.be/')[1]?.split(/[?&]/)[0] || ''
+    } else if (url.includes('youtube.com/watch')) {
+      const urlParams = new URL(url).searchParams
+      videoId = urlParams.get('v') || ''
+    } else if (url.includes('youtube.com/embed/')) {
+      videoId = url.split('youtube.com/embed/')[1]?.split(/[?&]/)[0] || ''
+    }
+    
+    if (videoId) {
+      return `https://www.youtube.com/embed/${videoId}`
+    }
+  }
+  
+  if (provider === 'vimeo') {
+    // Handle Vimeo URL formats
+    // vimeo.com/VIDEO_ID
+    // player.vimeo.com/video/VIDEO_ID
+    let videoId = ''
+    
+    if (url.includes('player.vimeo.com/video/')) {
+      videoId = url.split('player.vimeo.com/video/')[1]?.split(/[?&]/)[0] || ''
+    } else if (url.includes('vimeo.com/')) {
+      videoId = url.split('vimeo.com/')[1]?.split(/[?&]/)[0] || ''
+    }
+    
+    if (videoId) {
+      return `https://player.vimeo.com/video/${videoId}`
+    }
+  }
+  
+  // For direct videos, return as-is
+  if (provider === 'direct') {
+    return url
+  }
+  
+  return null
+}
+
 export default function ModulesPage() {
   const params = useParams()
   const classId = params.classId as string
@@ -44,6 +123,9 @@ export default function ModulesPage() {
   const [uploadingVideo, setUploadingVideo] = useState(false)
   const [removingVideo, setRemovingVideo] = useState(false)
   const [markingComplete, setMarkingComplete] = useState<string | null>(null)
+  const [videoSourceType, setVideoSourceType] = useState<'upload' | 'link'>('upload')
+  const [videoLinkInput, setVideoLinkInput] = useState("")
+  const [savingLink, setSavingLink] = useState(false)
   const [createModuleOpen, setCreateModuleOpen] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState("")
   const [newModuleDescription, setNewModuleDescription] = useState("")
@@ -285,6 +367,33 @@ export default function ModulesPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
+    }
+  }
+
+  const handleSaveVideoLink = async () => {
+    if (!selectedLesson || !videoLinkInput.trim()) return
+
+    const trimmedUrl = videoLinkInput.trim()
+    
+    // Validate the URL format
+    try {
+      new URL(trimmedUrl)
+    } catch {
+      alert('Please enter a valid URL')
+      return
+    }
+
+    setSavingLink(true)
+
+    try {
+      await updateLesson(selectedLesson.id, { video_url: trimmedUrl })
+      setSelectedLesson(prev => prev ? { ...prev, video_url: trimmedUrl } : null)
+      setVideoLinkInput("")
+    } catch (error) {
+      console.error('Save link error:', error)
+      alert('Failed to save video link')
+    } finally {
+      setSavingLink(false)
     }
   }
 
@@ -628,18 +737,40 @@ export default function ModulesPage() {
                     <div className="relative group aspect-video rounded-xl bg-black/50 flex items-center justify-center overflow-hidden">
                       {selectedLesson.video_url ? (
                         <>
-                          <video
-                            ref={videoRef}
-                            controls
-                            className="w-full h-full"
-                            src={selectedLesson.video_url}
-                            onEnded={handleVideoEnded}
-                          >
-                            Your browser does not support the video tag.
-                          </video>
+                          {/* Show embedded iframe for YouTube/Vimeo, native player for direct videos */}
+                          {getVideoProvider(selectedLesson.video_url) === 'youtube' || getVideoProvider(selectedLesson.video_url) === 'vimeo' ? (
+                            <iframe
+                              src={getEmbedUrl(selectedLesson.video_url) || ''}
+                              className="w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                              title={selectedLesson.title}
+                            />
+                          ) : (
+                            <video
+                              ref={videoRef}
+                              controls
+                              className="w-full h-full"
+                              src={selectedLesson.video_url}
+                              onEnded={handleVideoEnded}
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          )}
                           {/* Only show remove button to instructors */}
                           {isInstructor && (
-                            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+                              {getVideoProvider(selectedLesson.video_url) !== 'direct' && (
+                                <a
+                                  href={selectedLesson.video_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white text-sm flex items-center gap-1.5 transition-colors"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                  Open
+                                </a>
+                              )}
                               <Button
                                 variant="destructive"
                                 size="sm"
@@ -652,36 +783,100 @@ export default function ModulesPage() {
                                 ) : (
                                   <Trash2 className="w-4 h-4 mr-2" />
                                 )}
-                                Remove Video
+                                Remove
                               </Button>
                             </div>
                           )}
                         </>
                       ) : (
-                        <div className="text-center">
+                        <div className="text-center w-full max-w-md px-4">
                           {isInstructor ? (
                             <>
-                              <input
-                                type="file"
-                                ref={fileInputRef}
-                                accept="video/*"
-                                onChange={handleVideoUpload}
-                                className="hidden"
-                              />
-                              <button
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={uploadingVideo}
-                                className="flex flex-col items-center gap-2 p-4 rounded-xl hover:bg-white/5 transition-colors"
-                              >
-                                {uploadingVideo ? (
-                                  <Loader2 className="w-12 h-12 text-[hsl(var(--theme-primary))] animate-spin" />
-                                ) : (
-                                  <Upload className="w-12 h-12 text-white/30" />
-                                )}
-                                <span className="text-[var(--text-muted)]">
-                                  {uploadingVideo ? 'Uploading...' : 'Click to upload video'}
-                                </span>
-                              </button>
+                              {/* Toggle between Upload and Link */}
+                              <div className="flex justify-center mb-6">
+                                <div className="flex rounded-xl bg-white/5 p-1">
+                                  <button
+                                    onClick={() => setVideoSourceType('upload')}
+                                    className={cn(
+                                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                                      videoSourceType === 'upload'
+                                        ? "bg-theme-gradient text-white shadow-lg"
+                                        : "text-[var(--text-muted)] hover:text-white"
+                                    )}
+                                  >
+                                    <Upload className="w-4 h-4" />
+                                    Upload
+                                  </button>
+                                  <button
+                                    onClick={() => setVideoSourceType('link')}
+                                    className={cn(
+                                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                                      videoSourceType === 'link'
+                                        ? "bg-theme-gradient text-white shadow-lg"
+                                        : "text-[var(--text-muted)] hover:text-white"
+                                    )}
+                                  >
+                                    <Link2 className="w-4 h-4" />
+                                    Link
+                                  </button>
+                                </div>
+                              </div>
+
+                              {videoSourceType === 'upload' ? (
+                                <>
+                                  <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    accept="video/*"
+                                    onChange={handleVideoUpload}
+                                    className="hidden"
+                                  />
+                                  <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploadingVideo}
+                                    className="flex flex-col items-center gap-2 p-4 rounded-xl hover:bg-white/5 transition-colors w-full"
+                                  >
+                                    {uploadingVideo ? (
+                                      <Loader2 className="w-12 h-12 text-[hsl(var(--theme-primary))] animate-spin" />
+                                    ) : (
+                                      <Upload className="w-12 h-12 text-white/30" />
+                                    )}
+                                    <span className="text-[var(--text-muted)]">
+                                      {uploadingVideo ? 'Uploading...' : 'Click to upload video file'}
+                                    </span>
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="space-y-4">
+                                  <Link2 className="w-12 h-12 text-white/30 mx-auto" />
+                                  <p className="text-[var(--text-muted)] text-sm">
+                                    Paste a YouTube, Vimeo, or direct video URL
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="url"
+                                      value={videoLinkInput}
+                                      onChange={(e) => setVideoLinkInput(e.target.value)}
+                                      placeholder="https://youtube.com/watch?v=..."
+                                      className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--theme-primary))]/50"
+                                    />
+                                    <Button
+                                      variant="glass-theme"
+                                      onClick={handleSaveVideoLink}
+                                      disabled={savingLink || !videoLinkInput.trim()}
+                                    >
+                                      {savingLink ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        'Save'
+                                      )}
+                                    </Button>
+                                  </div>
+                                  <p className="text-xs text-[var(--text-muted)]">
+                                    Supported: YouTube, Vimeo, or direct .mp4/.webm links
+                                  </p>
+                                </div>
+                              )}
                             </>
                           ) : (
                             <>
