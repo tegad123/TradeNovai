@@ -38,7 +38,7 @@ import { getCourseStudents, type Lesson, type UserProfile } from "@/lib/supabase
 import { Switch } from "@/components/ui/switch"
 
 // Helper to detect video provider from URL
-function getVideoProvider(url: string): 'youtube' | 'vimeo' | 'direct' | null {
+function getVideoProvider(url: string): 'youtube' | 'vimeo' | 'direct' | 'external' | null {
   if (!url) return null
   
   const lowerUrl = url.toLowerCase()
@@ -53,13 +53,13 @@ function getVideoProvider(url: string): 'youtube' | 'vimeo' | 'direct' | null {
     return 'vimeo'
   }
   
-  // Direct video file (mp4, webm, etc.)
-  if (lowerUrl.match(/\.(mp4|webm|ogg|mov)(\?|$)/i)) {
+  // Direct video file (mp4, webm, etc.) or Supabase storage URLs
+  if (lowerUrl.match(/\.(mp4|webm|ogg|mov)(\?|$)/i) || lowerUrl.includes('supabase.co/storage')) {
     return 'direct'
   }
   
-  // Default to direct for uploaded videos or unknown
-  return 'direct'
+  // Any other URL - treat as external link (Whop, etc.)
+  return 'external'
 }
 
 // Extract video ID and return embed URL
@@ -752,7 +752,7 @@ export default function ModulesPage() {
                     <div className="relative group aspect-video rounded-xl bg-black/50 flex items-center justify-center overflow-hidden">
                       {selectedLesson.video_url ? (
                         <>
-                          {/* Show embedded iframe for YouTube/Vimeo, native player for direct videos */}
+                          {/* Show embedded iframe for YouTube/Vimeo, native player for direct videos, or external link button */}
                           {getVideoProvider(selectedLesson.video_url) === 'youtube' || getVideoProvider(selectedLesson.video_url) === 'vimeo' ? (
                             <iframe
                               src={getEmbedUrl(selectedLesson.video_url) || ''}
@@ -761,6 +761,28 @@ export default function ModulesPage() {
                               allowFullScreen
                               title={selectedLesson.title}
                             />
+                          ) : getVideoProvider(selectedLesson.video_url) === 'external' ? (
+                            /* External link (Whop, etc.) - show button to open in new tab */
+                            <div className="flex flex-col items-center justify-center gap-4 p-8">
+                              <div className="w-16 h-16 rounded-full bg-theme-gradient/20 flex items-center justify-center">
+                                <ExternalLink className="w-8 h-8 text-[hsl(var(--theme-primary))]" />
+                              </div>
+                              <div className="text-center">
+                                <h3 className="text-lg font-medium text-white mb-2">External Content</h3>
+                                <p className="text-sm text-[var(--text-muted)] mb-4">
+                                  This lesson content is hosted on an external platform
+                                </p>
+                              </div>
+                              <a
+                                href={selectedLesson.video_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-6 py-3 rounded-xl bg-theme-gradient text-white font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
+                              >
+                                <ExternalLink className="w-5 h-5" />
+                                Open Lesson Content
+                              </a>
+                            </div>
                           ) : (
                             <video
                               ref={videoRef}
