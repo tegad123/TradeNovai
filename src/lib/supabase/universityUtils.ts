@@ -2344,13 +2344,13 @@ export async function getModulesWithFullLockStatus(
 
   if (error || !modules) return result
 
-  for (const module of modules) {
-    const lockStatus = await isModuleFullyUnlocked(module.id, userId)
-    result.set(module.id, {
+  for (const mod of modules) {
+    const lockStatus = await isModuleFullyUnlocked(mod.id, userId)
+    result.set(mod.id, {
       isLocked: !lockStatus.isUnlocked,
       blockedByModule: lockStatus.blockedByModule,
       blockedByAssignments: lockStatus.blockedByAssignments,
-      prerequisiteModuleId: module.prerequisite_module_id,
+      prerequisiteModuleId: mod.prerequisite_module_id,
       requiredAssignmentIds: lockStatus.requiredAssignmentIds,
       incompleteAssignmentIds: lockStatus.incompleteAssignmentIds
     })
