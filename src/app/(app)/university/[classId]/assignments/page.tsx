@@ -548,16 +548,6 @@ export default function AssignmentsPage({ params }: PageProps) {
                 .filter(Boolean)
               const canSubmit = !submission && currentRole === 'student' && !isLocked
               const hasAttachments = (assignment.attachments?.length || 0) > 0
-              // #region agent log
-              console.log('[DEBUG] Assignment render:', { 
-                id: assignment.id, 
-                title: assignment.title, 
-                attachments: assignment.attachments, 
-                hasAttachments,
-                isLocked,
-                currentRole
-              });
-              // #endregion
               
               return (
                 <GlassCard

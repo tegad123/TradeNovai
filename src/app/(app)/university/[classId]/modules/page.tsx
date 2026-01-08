@@ -910,13 +910,7 @@ export default function ModulesPage() {
                                   {!selectedLesson.is_completed && (
                                     <button
                                       onClick={async () => {
-                                        // #region agent log
-                                        console.log('[DEBUG] YouTube/Vimeo Mark Complete clicked', {lessonId:selectedLesson.id});
-                                        // #endregion
                                         const result = await markLessonComplete(selectedLesson.id)
-                                        // #region agent log
-                                        console.log('[DEBUG] markLessonComplete returned', {result});
-                                        // #endregion
                                         if (result) {
                                           setSelectedLesson(prev => prev ? { ...prev, is_completed: true } : null)
                                           setVideoCompleted(true)
@@ -945,23 +939,10 @@ export default function ModulesPage() {
                               </div>
                               <button
                                 onClick={async () => {
-                                  // #region agent log
-                                  console.log('[DEBUG] External link clicked', {isInstructor,hasSelectedLesson:!!selectedLesson,lessonId:selectedLesson?.id,isCompleted:selectedLesson?.is_completed,videoUrl:selectedLesson?.video_url});
-                                  // #endregion
                                   // Mark lesson as complete when student clicks the external link
                                   if (!isInstructor && selectedLesson && !selectedLesson.is_completed) {
-                                    // #region agent log
-                                    console.log('[DEBUG] Condition met, calling markLessonComplete', {lessonId:selectedLesson.id});
-                                    // #endregion
-                                    const result = await markLessonComplete(selectedLesson.id)
-                                    // #region agent log
-                                    console.log('[DEBUG] markLessonComplete returned', {result,lessonId:selectedLesson.id});
-                                    // #endregion
+                                    await markLessonComplete(selectedLesson.id)
                                     setVideoCompleted(true)
-                                  } else {
-                                    // #region agent log
-                                    console.log('[DEBUG] Condition NOT met, skipping', {isInstructor,hasSelectedLesson:!!selectedLesson,isCompleted:selectedLesson?.is_completed});
-                                    // #endregion
                                   }
                                   // Open the link in a new tab
                                   if (selectedLesson.video_url) {
