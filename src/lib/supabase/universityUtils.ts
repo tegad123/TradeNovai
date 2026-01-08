@@ -1666,6 +1666,16 @@ export async function getStudentVisibleAssignments(
     .eq('course_id', courseId)
     .order('due_date', { ascending: true })
 
+  // #region agent log
+  console.log('[DEBUG] getStudentVisibleAssignments raw data:', { 
+    courseId, 
+    studentId,
+    assignmentCount: allAssignments?.length,
+    firstAssignment: allAssignments?.[0],
+    attachmentsField: allAssignments?.map(a => ({ id: a.id, title: a.title, attachments: a.attachments }))
+  });
+  // #endregion
+
   if (error || !allAssignments) {
     console.error('Error fetching assignments:', error)
     return []
