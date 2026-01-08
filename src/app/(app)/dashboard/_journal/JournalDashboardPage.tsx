@@ -72,9 +72,12 @@ interface DashboardData {
   recentTrades: Array<{
     id: string
     symbol: string
-    side: string
-    pnl: number
-    time: string
+    side: "long" | "short"
+    entryPrice: number
+    exitPrice?: number
+    pnl?: number
+    status: "open" | "closed"
+    date: string
   }>
   calendarData: Array<{ date: string; pnl: number | null }>
 }
@@ -146,12 +149,17 @@ function calculateDashboardData(trades: TradeData[]): DashboardData {
     .map(t => ({
       id: t.id,
       symbol: t.symbol,
-      side: t.side,
+      side: (t.side === 'long' || t.side === 'short' ? t.side : 'long') as "long" | "short",
+      entryPrice: t.entry_price || 0,
+      exitPrice: t.exit_price,
       pnl: t.pnl || 0,
-      time: new Date(t.exit_time).toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }),
+      status: 'closed' as const,
+      date: t.exit_time ? new Date(t.exit_time).toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) : '',
     }))
 
   // Calendar data (last 30 days)
