@@ -77,6 +77,19 @@ export default function ReviewsPage({ params }: PageProps) {
 
   const pendingSubmissions = submissions.filter(s => s.status === 'submitted')
   const pendingTradeLogs = tradeLogs.filter(l => !l.instructor_feedback)
+  
+  // #region agent log
+  console.log('[DEBUG] Reviews page submissions:', { 
+    totalSubmissions: submissions.length,
+    pendingCount: pendingSubmissions.length,
+    submissionDetails: submissions.map(s => ({ 
+      id: s.id, 
+      file_url: s.file_url, 
+      attachments: s.attachments,
+      status: s.status
+    }))
+  });
+  // #endregion
 
   const handleGradeSubmission = async () => {
     if (!selectedSubmission || grade === '' || !feedback.trim()) return

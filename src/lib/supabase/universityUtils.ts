@@ -807,6 +807,15 @@ export async function getCourseSubmissions(courseId: string): Promise<Submission
     .eq('assignment.course_id', courseId)
     .order('submitted_at', { ascending: false })
 
+  // #region agent log
+  console.log('[DEBUG] getCourseSubmissions raw data:', { 
+    courseId,
+    count: data?.length,
+    firstSubmission: data?.[0],
+    fileUrls: data?.map(s => ({ id: s.id, file_url: s.file_url, attachments: s.attachments }))
+  });
+  // #endregion
+
   if (error) {
     console.error('Error fetching course submissions:', error)
     return []
