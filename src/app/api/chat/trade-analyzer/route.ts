@@ -12,6 +12,9 @@ import {
 // Use Node.js runtime for Supabase access
 export const runtime = "nodejs"
 
+// Check if OpenAI API key is configured
+const hasOpenAIKey = !!process.env.OPENAI_API_KEY
+
 // Create Supabase client for server
 async function createClient() {
   const cookieStore = await cookies()
@@ -38,32 +41,87 @@ async function createClient() {
 async function getUserContext(userId: string) {
   const supabase = await createClient()
   
-  // Fetch recent trades
-  const { data: trades } = await supabase
-    .from('trades')
-    .select('id, symbol, side, entry_price, exit_price, pnl, closed_at, notes')
-    .eq('user_id', userId)
-    .eq('status', 'closed')
-    .order('closed_at', { ascending: false })
-    .limit(10)
+  // Fetch recent trades (table should exist)
+  let trades: Array<{
+    id: string
+    symbol: string
+    side: string
+    entry_price: number
+    exit_price: number
+    pnl: number
+    closed_at: string | null
+    notes: string | null
+  }> = []
   
-  // Fetch recent journal entries
-  const { data: journalEntries } = await supabase
-    .from('journal_entries')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(5)
+  try {
+    const { data, error } = await supabase
+      .from('trades')
+      .select('id, symbol, side, entry_price, exit_price, pnl, closed_at, notes')
+      .eq('user_id', userId)
+      .eq('status', 'closed')
+      .order('closed_at', { ascending: false })
+      .limit(10)
+    
+    if (!error && data) {
+      trades = data
+    }
+  } catch (e) {
+    console.warn('Failed to fetch trades for context:', e)
+  }
   
-  // Fetch trading goals
-  const { data: goals } = await supabase
-    .from('user_trading_goals')
-    .select('*')
-    .eq('user_id', userId)
-    .single()
+  // Fetch recent journal entries (table may not exist)
+  let journalEntries: Array<{
+    id: string
+    content: string
+    created_at: string
+    emotion: string | null
+    tags: string[] | null
+  }> = []
+  
+  try {
+    const { data, error } = await supabase
+      .from('journal_entries')
+      .select('id, content, created_at, emotion, tags')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    
+    if (!error && data) {
+      journalEntries = data
+    }
+  } catch (e) {
+    // Table may not exist yet, that's okay
+    console.warn('Failed to fetch journal entries (table may not exist):', e)
+  }
+  
+  // Fetch trading goals (table may not exist)
+  let goals: {
+    max_risk_per_trade?: number
+    max_daily_loss?: number
+    daily_profit_target?: number
+    weekly_goals?: string
+    focus_areas?: string[]
+    entry_rules?: string[]
+    exit_rules?: string[]
+  } | null = null
+  
+  try {
+    const { data, error } = await supabase
+      .from('user_trading_goals')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+    
+    if (!error && data) {
+      goals = data
+    }
+  } catch (e) {
+    // Table may not exist yet, that's okay
+    console.warn('Failed to fetch trading goals (table may not exist):', e)
+  }
   
   return {
-    trades: (trades || []).map(t => ({
+    trades: trades.map(t => ({
       id: t.id,
       symbol: t.symbol,
       side: t.side,
@@ -71,14 +129,14 @@ async function getUserContext(userId: string) {
       exitPrice: t.exit_price,
       pnl: t.pnl,
       tradeDate: t.closed_at ? new Date(t.closed_at).toISOString().split('T')[0] : '',
-      notes: t.notes
+      notes: t.notes ?? undefined
     })),
-    journalEntries: (journalEntries || []).map(e => ({
+    journalEntries: journalEntries.map(e => ({
       id: e.id,
       content: e.content,
       createdAt: e.created_at,
-      emotion: e.emotion,
-      tags: e.tags
+      emotion: e.emotion ?? undefined,
+      tags: e.tags ?? undefined
     })),
     goals
   }
@@ -161,6 +219,17 @@ ${goalsFormatted}
 
 export async function POST(req: Request) {
   try {
+    // Check for OpenAI API key first
+    if (!hasOpenAIKey) {
+      console.error('Trade analyzer error: OPENAI_API_KEY is not configured')
+      return new Response(JSON.stringify({ 
+        error: 'AI chat is not configured. Please add OPENAI_API_KEY to environment variables.' 
+      }), { 
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
     const { messages, includeContext = true } = await req.json()
     
     // Get authenticated user
@@ -168,7 +237,7 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
+      return new Response(JSON.stringify({ error: 'Unauthorized. Please sign in to use the AI chat.' }), { 
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -178,9 +247,14 @@ export async function POST(req: Request) {
     let systemPrompt = TRADE_ANALYZER_SYSTEM_PROMPT
     
     if (includeContext) {
-      const context = await getUserContext(user.id)
-      const contextMessage = buildContextMessage(context)
-      systemPrompt = `${TRADE_ANALYZER_SYSTEM_PROMPT}\n\n${contextMessage}`
+      try {
+        const context = await getUserContext(user.id)
+        const contextMessage = buildContextMessage(context)
+        systemPrompt = `${TRADE_ANALYZER_SYSTEM_PROMPT}\n\n${contextMessage}`
+      } catch (contextError) {
+        // Log the error but continue without context - tables may not exist yet
+        console.warn('Failed to load user context, continuing without:', contextError)
+      }
     }
 
     // Convert messages
@@ -198,7 +272,10 @@ export async function POST(req: Request) {
     return result.toDataStreamResponse()
   } catch (error) {
     console.error('Trade analyzer error:', error)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return new Response(JSON.stringify({ 
+      error: `AI chat error: ${errorMessage}` 
+    }), { 
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     })

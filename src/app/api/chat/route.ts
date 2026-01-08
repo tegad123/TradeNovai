@@ -28,14 +28,35 @@ IMPORTANT: You provide educational coaching only. You do NOT provide:
 Always remind users that trading involves risk and past performance doesn't guarantee future results when discussing specific trades or strategies.`;
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  try {
+    // Check if OpenAI API key is configured
+    if (!process.env.OPENAI_API_KEY) {
+      return new Response(JSON.stringify({ 
+        error: 'AI chat is not configured. Please add OPENAI_API_KEY to environment variables.' 
+      }), { 
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
-  const result = await streamText({
-    model: openai("gpt-4o"),
-    messages: convertToCoreMessages(messages),
-    system: COACH_SYSTEM_PROMPT,
-  });
+    const { messages } = await req.json();
 
-  return result.toDataStreamResponse();
+    const result = await streamText({
+      model: openai("gpt-4o"),
+      messages: convertToCoreMessages(messages),
+      system: COACH_SYSTEM_PROMPT,
+    });
+
+    return result.toDataStreamResponse();
+  } catch (error) {
+    console.error('Chat API error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ 
+      error: `AI chat error: ${errorMessage}` 
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
 
