@@ -9,6 +9,7 @@ interface ChatInputProps {
   onStop?: () => void;
   isLoading?: boolean;
   disabled?: boolean;
+  placeholder?: string;
 }
 
 export function ChatInput({
@@ -18,6 +19,7 @@ export function ChatInput({
   onStop,
   isLoading = false,
   disabled = false,
+  placeholder = "Type a message...",
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -45,7 +47,7 @@ export function ChatInput({
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message..."
+          placeholder={placeholder}
           disabled={disabled}
           rows={1}
           className="flex-1 resize-none bg-transparent px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"

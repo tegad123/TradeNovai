@@ -1,9 +1,11 @@
 "use client"
 
-import { JournalComingSoon } from "@/components/journal/JournalComingSoon"
+import { ChatInterface } from "@/components/chat/ChatInterface"
 
 export default function ChatPage() {
-  return <JournalComingSoon title="AI Chat" />
+  return (
+    <div className="h-[calc(100vh-4rem)]">
+      <ChatInterface />
+    </div>
+  )
 }
-
-

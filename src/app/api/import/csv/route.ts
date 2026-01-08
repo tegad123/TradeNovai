@@ -125,6 +125,10 @@ async function importTradovateFormat(
   console.log("[Import] First 500 chars:", csvText.substring(0, 500))
   console.log("[Import] User ID:", userId)
   
+  // #region agent log
+  try { await fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'import/csv:entry',message:'Import started',data:{csvLength:csvText.length,userId:userId.slice(-6),accountId,broker},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}); } catch(e){}
+  // #endregion
+  
   // Parse CSV
   const { executions: parsedExecutions, skipped, errors } = parseTradovateOrdersCSV(
     csvText,
@@ -218,9 +222,18 @@ async function importTradovateFormat(
   // Save trades using the authenticated server client
   const allTrades = [...tradesToSave, ...openTradesToSave]
   console.log("[Import] Saving", allTrades.length, "trades to database...")
+  
+  // #region agent log
+  try { await fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'import/csv:beforeSaveTrades',message:'About to save trades',data:{tradesCount:allTrades.length,closedCount:tradesToSave.length,openCount:openTradesToSave.length,firstTradeSymbol:allTrades[0]?.symbol,firstTradeStatus:allTrades[0]?.status,firstTradeExitTime:allTrades[0]?.exitTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}); } catch(e){}
+  // #endregion
+  
   const { created: tradesCreated, updated: tradesUpdated, duplicates: tradeDuplicates } = 
     allTrades.length > 0 ? await saveTrades(allTrades, supabase) : { created: 0, updated: 0, duplicates: 0 }
   console.log("[Import] Trades created:", tradesCreated, "updated:", tradesUpdated, "duplicates:", tradeDuplicates)
+
+  // #region agent log
+  try { await fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'import/csv:afterSaveTrades',message:'Trades saved',data:{created:tradesCreated,updated:tradesUpdated,duplicates:tradeDuplicates,userId:userId.slice(-6)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}); } catch(e){}
+  // #endregion
 
   const result = {
     success: true,

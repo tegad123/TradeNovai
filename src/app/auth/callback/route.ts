@@ -8,24 +8,35 @@ export async function GET(request: Request) {
   const nextRaw = searchParams.get("next") ?? "/university"
   const next = nextRaw.startsWith("/") ? nextRaw : "/university"
 
+  // Determine the correct origin to redirect to
+  // In development (localhost), use the URL's origin directly
+  // In production (behind proxy), use forwarded headers
+  const getRedirectOrigin = () => {
+    const host = request.headers.get("host") || url.host
+    
+    // If we're on localhost, use the request URL directly
+    if (host.includes("localhost") || host.includes("127.0.0.1")) {
+      return url.origin
+    }
+    
+    // Otherwise, prefer forwarded headers (for Render/proxy)
+    const xfHost = request.headers.get("x-forwarded-host") || host
+    const xfProto = request.headers.get("x-forwarded-proto") || "https"
+    return `${xfProto}://${xfHost}`
+  }
+
   if (code) {
     const supabase = createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // Prefer forwarded headers (Render/Proxy) over request.url's origin to avoid redirecting to localhost.
-      const xfHost = request.headers.get("x-forwarded-host")
-      const host = xfHost || request.headers.get("host") || url.host
-      const xfProto = request.headers.get("x-forwarded-proto")
-      const proto = xfProto || url.protocol.replace(":", "") || "https"
-      const target = `${proto}://${host}${next}`
-      return NextResponse.redirect(target)
+      const origin = getRedirectOrigin()
+      return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
   // Return the user to an error page with instructions
-  const fallbackHost = request.headers.get("x-forwarded-host") || request.headers.get("host") || url.host
-  const fallbackProto = request.headers.get("x-forwarded-proto") || url.protocol.replace(":", "") || "https"
-  return NextResponse.redirect(`${fallbackProto}://${fallbackHost}/login?error=auth_callback_error`)
+  const origin = getRedirectOrigin()
+  return NextResponse.redirect(`${origin}/login?error=auth_callback_error`)
 }
 

@@ -1,6 +1,5 @@
 "use client"
-
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
   FileText,
   Clock,
@@ -17,7 +16,11 @@ import {
   AlertTriangle,
   File,
   Image as ImageIcon,
+  Lock,
+  Trash2,
+  ExternalLink,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
 import { Button } from "@/components/ui/button"
@@ -31,6 +34,7 @@ import {
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { useUniversityAssignments } from "@/lib/hooks/useUniversityAssignments"
+import { useUniversityModules } from "@/lib/hooks/useUniversityModules"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
 import { uploadAttachment, uploadFile } from "@/lib/supabase/storageUtils"
 import { 
@@ -39,9 +43,14 @@ import {
   assignAssignmentToStudent, 
   unassignAssignmentFromStudent,
   updateAssignment,
+  setAssignmentPrerequisites,
+  getAssignmentPrerequisites,
+  getAssignmentsWithLockStatus,
+  deleteAssignment as deleteAssignmentUtil,
   type Assignment, 
   type Submission, 
-  type UserProfile 
+  type UserProfile,
+  type Module
 } from "@/lib/supabase/universityUtils"
 
 interface PageProps {
@@ -89,10 +98,53 @@ export default function AssignmentsPage({ params }: PageProps) {
   const [publishStep, setPublishStep] = useState<'choose' | 'select-students'>('choose')
   const [publishingAssignment, setPublishingAssignment] = useState(false)
   
+  // Assignment prerequisites state
+  const [assignmentLockStatus, setAssignmentLockStatus] = useState<Record<string, { isLocked: boolean; prerequisiteModuleIds: string[] }>>({})
+  const [selectedPrerequisiteModuleIds, setSelectedPrerequisiteModuleIds] = useState<string[]>([])
+  const [savingPrerequisites, setSavingPrerequisites] = useState(false)
+  
+  // Delete assignment state
+  const [deleteAssignmentOpen, setDeleteAssignmentOpen] = useState(false)
+  const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null)
+  const [deletingAssignment, setDeletingAssignment] = useState(false)
+  
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
 
+  // Get modules for prerequisite selection
+  const { modules } = useUniversityModules(currentCourse?.id || null)
+
   const isInstructor = currentRole === 'instructor'
+
+  // Load assignment lock status for students
+  useEffect(() => {
+    async function loadLockStatus() {
+      if (!currentCourse?.id || !currentUser?.id || isInstructor) return
+      
+      const lockData = await getAssignmentsWithLockStatus(currentCourse.id, currentUser.id)
+      const lockMap: Record<string, { isLocked: boolean; prerequisiteModuleIds: string[] }> = {}
+      lockData.forEach(item => {
+        lockMap[item.assignmentId] = {
+          isLocked: item.isLocked,
+          prerequisiteModuleIds: item.prerequisiteModuleIds
+        }
+      })
+      setAssignmentLockStatus(lockMap)
+    }
+    
+    loadLockStatus()
+  }, [currentCourse?.id, currentUser?.id, isInstructor, assignments])
+
+  // Load prerequisites when opening manage access dialog
+  useEffect(() => {
+    async function loadPrerequisites() {
+      if (accessAssignmentId && manageAccessOpen) {
+        const prereqs = await getAssignmentPrerequisites(accessAssignmentId)
+        setSelectedPrerequisiteModuleIds(prereqs)
+      }
+    }
+    loadPrerequisites()
+  }, [accessAssignmentId, manageAccessOpen])
 
   const getSubmissionForAssignment = (assignmentId: string): Submission | undefined => {
     return submissions.find(s => s.assignment_id === assignmentId)
@@ -367,6 +419,61 @@ export default function AssignmentsPage({ params }: PageProps) {
     refetch()
   }
 
+  const handleTogglePrerequisite = (moduleId: string) => {
+    setSelectedPrerequisiteModuleIds(prev => 
+      prev.includes(moduleId) 
+        ? prev.filter(id => id !== moduleId)
+        : [...prev, moduleId]
+    )
+  }
+
+  const handleSavePrerequisites = async () => {
+    if (!accessAssignmentId) return
+    
+    setSavingPrerequisites(true)
+    try {
+      const success = await setAssignmentPrerequisites(accessAssignmentId, selectedPrerequisiteModuleIds)
+      if (!success) {
+        alert('Failed to save prerequisites')
+      }
+    } catch (error) {
+      console.error('Save prerequisites error:', error)
+      alert('Failed to save prerequisites')
+    } finally {
+      setSavingPrerequisites(false)
+    }
+  }
+
+  const handleDeleteAssignment = async () => {
+    if (!assignmentToDelete) return
+    
+    setDeletingAssignment(true)
+    try {
+      const success = await deleteAssignmentUtil(assignmentToDelete.id)
+      if (success) {
+        setDeleteAssignmentOpen(false)
+        setAssignmentToDelete(null)
+        // Clear selection if deleted assignment was selected
+        if (selectedAssignment?.id === assignmentToDelete.id) {
+          setSelectedAssignment(null)
+        }
+        refetch()
+      } else {
+        alert('Failed to delete assignment')
+      }
+    } catch (error) {
+      console.error('Delete assignment error:', error)
+      alert('Failed to delete assignment')
+    } finally {
+      setDeletingAssignment(false)
+    }
+  }
+
+  const openDeleteAssignmentDialog = (assignment: Assignment) => {
+    setAssignmentToDelete(assignment)
+    setDeleteAssignmentOpen(true)
+  }
+
   const getFileIcon = (url: string) => {
     const ext = url.split('.').pop()?.toLowerCase()
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
@@ -434,27 +541,47 @@ export default function AssignmentsPage({ params }: PageProps) {
           <div className="space-y-4">
             {assignments.map((assignment) => {
               const submission = getSubmissionForAssignment(assignment.id)
-              const canSubmit = !submission && currentRole === 'student'
+              const isLocked = !isInstructor && assignmentLockStatus[assignment.id]?.isLocked
+              const prerequisiteModuleIds = assignmentLockStatus[assignment.id]?.prerequisiteModuleIds || []
+              const prerequisiteModuleNames = prerequisiteModuleIds
+                .map(id => modules.find(m => m.id === id)?.title)
+                .filter(Boolean)
+              const canSubmit = !submission && currentRole === 'student' && !isLocked
               const hasAttachments = (assignment.attachments?.length || 0) > 0
               
               return (
                 <GlassCard
                   key={assignment.id}
-                  className={`p-4 transition-all ${
-                    canSubmit ? 'hover:bg-white/[0.08] cursor-pointer' : ''
-                  }`}
-                  onClick={() => canSubmit && setSelectedAssignment(assignment)}
+                  className={cn(
+                    "p-4 transition-all",
+                    isLocked && "opacity-60",
+                    canSubmit && !isLocked ? 'hover:bg-white/[0.08] cursor-pointer' : ''
+                  )}
+                  onClick={() => canSubmit && !isLocked && setSelectedAssignment(assignment)}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4 flex-1">
-                      <div className="w-10 h-10 rounded-xl bg-theme-gradient/20 flex items-center justify-center shrink-0">
-                        <FileText className="w-5 h-5 text-[hsl(var(--theme-primary))]" />
+                      <div className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                        isLocked ? "bg-yellow-500/20" : "bg-theme-gradient/20"
+                      )}>
+                        {isLocked ? (
+                          <Lock className="w-5 h-5 text-yellow-400" />
+                        ) : (
+                          <FileText className="w-5 h-5 text-[hsl(var(--theme-primary))]" />
+                        )}
                       </div>
                       
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-medium text-white">{assignment.title}</h3>
-                          {getStatusBadge(assignment)}
+                          {isLocked && (
+                            <span className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full">
+                              <Lock className="w-3 h-3" />
+                              Locked
+                            </span>
+                          )}
+                          {!isLocked && getStatusBadge(assignment)}
                           {assignment.is_restricted && (
                             <span className="flex items-center gap-1 text-xs text-purple-400 bg-purple-400/10 px-2 py-1 rounded-full">
                               <Users className="w-3 h-3" />
@@ -463,17 +590,23 @@ export default function AssignmentsPage({ params }: PageProps) {
                           )}
                         </div>
                         
-                        <p className="text-sm text-[var(--text-muted)] line-clamp-2">
-                          {assignment.description}
-                        </p>
+                        {isLocked ? (
+                          <p className="text-sm text-yellow-400/70">
+                            Complete {prerequisiteModuleNames.length > 1 ? 'modules' : 'module'}: {prerequisiteModuleNames.join(', ')} first
+                          </p>
+                        ) : (
+                          <p className="text-sm text-[var(--text-muted)] line-clamp-2">
+                            {assignment.description}
+                          </p>
+                        )}
                         
                         <div className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
                           <span>Due: {formatDate(assignment.due_date)}</span>
                           <span>{assignment.points} points</span>
                         </div>
 
-                        {/* Attachments from instructor */}
-                        {hasAttachments && (
+                        {/* Attachments from instructor - always visible to students */}
+                        {hasAttachments && !isLocked && (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {assignment.attachments?.map((url, idx) => (
                               <a
@@ -486,7 +619,7 @@ export default function AssignmentsPage({ params }: PageProps) {
                               >
                                 {getFileIcon(url)}
                                 <span className="max-w-[100px] truncate">{getFileName(url)}</span>
-                                <Download className="w-3 h-3" />
+                                <ExternalLink className="w-3 h-3" />
                               </a>
                             ))}
                           </div>
@@ -503,19 +636,32 @@ export default function AssignmentsPage({ params }: PageProps) {
 
                     <div className="flex items-center gap-2">
                       {isInstructor && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-8 h-8 rounded-lg hover:bg-white/10"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleOpenManageAccess(assignment.id)
-                          }}
-                        >
-                          <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
-                        </Button>
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-lg hover:bg-white/10"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenManageAccess(assignment.id)
+                            }}
+                          >
+                            <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-lg hover:bg-red-500/20"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDeleteAssignmentDialog(assignment)
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </Button>
+                        </>
                       )}
-                      {canSubmit && (
+                      {canSubmit && !isLocked && (
                         <ChevronRight className="w-5 h-5 text-[var(--text-muted)]" />
                       )}
                     </div>
@@ -690,7 +836,7 @@ export default function AssignmentsPage({ params }: PageProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-sm text-[var(--text-muted)]">Due Date</label>
+                <label className="text-sm text-[var(--text-muted)]">Due Date <span className="opacity-60">(optional)</span></label>
                 <input
                   type="datetime-local"
                   value={newDueDate}
@@ -807,6 +953,48 @@ export default function AssignmentsPage({ params }: PageProps) {
                 checked={assignments.find(a => a.id === accessAssignmentId)?.is_restricted || false}
                 onCheckedChange={handleToggleRestricted}
               />
+            </div>
+
+            {/* Module Prerequisites */}
+            <div className="space-y-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Module Prerequisites</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students must complete these modules first
+                </div>
+              </div>
+              <div className="max-h-[150px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {modules.length > 0 ? (
+                  modules.map(mod => (
+                    <div
+                      key={mod.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10"
+                    >
+                      <span className="text-sm text-white">{mod.title}</span>
+                      <Switch
+                        checked={selectedPrerequisiteModuleIds.includes(mod.id)}
+                        onCheckedChange={() => handleTogglePrerequisite(mod.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-2">
+                    No modules created yet.
+                  </p>
+                )}
+              </div>
+              {modules.length > 0 && (
+                <Button
+                  variant="glass-theme"
+                  size="sm"
+                  onClick={handleSavePrerequisites}
+                  disabled={savingPrerequisites}
+                  className="w-full mt-2"
+                >
+                  {savingPrerequisites ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Save Prerequisites
+                </Button>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -953,6 +1141,54 @@ export default function AssignmentsPage({ params }: PageProps) {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Assignment Confirmation Dialog */}
+      <Dialog open={deleteAssignmentOpen} onOpenChange={setDeleteAssignmentOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              Delete Assignment
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{assignmentToDelete?.title}&quot;? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+            <p className="text-sm text-red-300">
+              This will permanently delete:
+            </p>
+            <ul className="mt-2 text-sm text-[var(--text-muted)] list-disc list-inside space-y-1">
+              <li>The assignment and all its settings</li>
+              <li>All student submissions for this assignment</li>
+              <li>All grades and feedback</li>
+            </ul>
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button 
+              variant="glass" 
+              onClick={() => {
+                setDeleteAssignmentOpen(false)
+                setAssignmentToDelete(null)
+              }}
+              disabled={deletingAssignment}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAssignment}
+              disabled={deletingAssignment}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {deletingAssignment ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete Assignment
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageContainer>

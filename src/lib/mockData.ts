@@ -33,14 +33,14 @@ export const mockKPIs = {
 }
 
 export const mockNovaScore = {
-  score: 74,
+  score: 31,
   data: [
-    { subject: "Risk", value: 82, fullMark: 100 },
-    { subject: "Discipline", value: 78, fullMark: 100 },
-    { subject: "Consistency", value: 65, fullMark: 100 },
-    { subject: "Execution", value: 70, fullMark: 100 },
-    { subject: "Psychology", value: 68, fullMark: 100 },
-    { subject: "Planning", value: 80, fullMark: 100 },
+    { subject: "Win %", value: 85, fullMark: 100 },
+    { subject: "Profit factor", value: 60, fullMark: 100 },
+    { subject: "Avg win/loss", value: 45, fullMark: 100 },
+    { subject: "Recovery factor", value: 20, fullMark: 100 },
+    { subject: "Max drawdown", value: 15, fullMark: 100 },
+    { subject: "Consistency", value: 55, fullMark: 100 },
   ],
 }
 

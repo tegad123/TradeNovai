@@ -18,6 +18,8 @@ import {
   ArrowRight,
   Link2,
   ExternalLink,
+  Lock,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUniversity } from "@/lib/contexts/UniversityContext"
@@ -34,8 +36,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { uploadLessonVideo } from "@/lib/supabase/storageUtils"
-import { getCourseStudents, type Lesson, type UserProfile } from "@/lib/supabase/universityUtils"
+import { 
+  getCourseStudents, 
+  setModulePrerequisite,
+  getModulesWithLockStatus,
+  deleteModule as deleteModuleUtil,
+  type Lesson, 
+  type UserProfile,
+  type Module
+} from "@/lib/supabase/universityUtils"
 import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Helper to detect video provider from URL
 function getVideoProvider(url: string): 'youtube' | 'vimeo' | 'direct' | 'external' | null {
@@ -147,6 +164,16 @@ export default function ModulesPage() {
   const [publishStep, setPublishStep] = useState<'choose' | 'select-students'>('choose')
   const [publishingModule, setPublishingModule] = useState(false)
   
+  // Module prerequisites state
+  const [moduleLockStatus, setModuleLockStatus] = useState<Record<string, { isLocked: boolean; prerequisiteModuleId: string | null; prerequisiteModuleTitle: string | null }>>({})
+  const [selectedPrerequisiteModuleId, setSelectedPrerequisiteModuleId] = useState<string | null>(null)
+  const [savingPrerequisite, setSavingPrerequisite] = useState(false)
+  
+  // Delete module state
+  const [deleteModuleOpen, setDeleteModuleOpen] = useState(false)
+  const [moduleToDelete, setModuleToDelete] = useState<Module | null>(null)
+  const [deletingModule, setDeletingModule] = useState(false)
+  
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -163,7 +190,8 @@ export default function ModulesPage() {
     createLesson,
     removeLessonVideo,
     assignModule,
-    unassignModule
+    unassignModule,
+    refresh: refreshModules
   } = useUniversityModules(currentCourse?.id || null)
 
   const isInstructor = currentRole === 'instructor'
@@ -241,6 +269,34 @@ export default function ModulesPage() {
   useEffect(() => {
     setVideoCompleted(false)
   }, [selectedLesson?.id])
+
+  // Load module lock status for students
+  useEffect(() => {
+    async function loadLockStatus() {
+      if (!currentCourse?.id || !currentUser?.id || isInstructor) return
+      
+      const lockData = await getModulesWithLockStatus(currentCourse.id, currentUser.id)
+      const lockMap: Record<string, { isLocked: boolean; prerequisiteModuleId: string | null; prerequisiteModuleTitle: string | null }> = {}
+      lockData.forEach(item => {
+        lockMap[item.moduleId] = {
+          isLocked: item.isLocked,
+          prerequisiteModuleId: item.prerequisiteModuleId,
+          prerequisiteModuleTitle: item.prerequisiteModuleTitle
+        }
+      })
+      setModuleLockStatus(lockMap)
+    }
+    
+    loadLockStatus()
+  }, [currentCourse?.id, currentUser?.id, isInstructor, modules])
+
+  // Set selected prerequisite when opening manage access dialog
+  useEffect(() => {
+    if (accessModuleId && manageAccessOpen) {
+      const mod = modules.find(m => m.id === accessModuleId)
+      setSelectedPrerequisiteModuleId(mod?.prerequisite_module_id || null)
+    }
+  }, [accessModuleId, manageAccessOpen, modules])
 
   const goToNextLesson = () => {
     if (nextLesson) {
@@ -341,6 +397,54 @@ export default function ModulesPage() {
   const handleTogglePublished = async (published: boolean) => {
     if (!accessModuleId) return
     const ok = await updateModule(accessModuleId, { is_published: published } as any)
+  }
+
+  const handleSavePrerequisite = async () => {
+    if (!accessModuleId) return
+    
+    setSavingPrerequisite(true)
+    try {
+      const success = await setModulePrerequisite(accessModuleId, selectedPrerequisiteModuleId)
+      if (success) {
+        // Refresh module data by triggering a re-render
+        await updateModule(accessModuleId, { prerequisite_module_id: selectedPrerequisiteModuleId } as any)
+      }
+    } catch (error) {
+      console.error('Save prerequisite error:', error)
+    } finally {
+      setSavingPrerequisite(false)
+    }
+  }
+
+  const handleDeleteModule = async () => {
+    if (!moduleToDelete) return
+    
+    setDeletingModule(true)
+    try {
+      const success = await deleteModuleUtil(moduleToDelete.id)
+      if (success) {
+        setDeleteModuleOpen(false)
+        setModuleToDelete(null)
+        // Clear selected lesson if it was in the deleted module
+        if (selectedLesson && moduleToDelete.lessons?.some(l => l.id === selectedLesson.id)) {
+          setSelectedLesson(null)
+        }
+        // Refresh the modules list
+        await refreshModules()
+      } else {
+        alert('Failed to delete module')
+      }
+    } catch (error) {
+      console.error('Delete module error:', error)
+      alert('Failed to delete module')
+    } finally {
+      setDeletingModule(false)
+    }
+  }
+
+  const openDeleteModuleDialog = (mod: Module) => {
+    setModuleToDelete(mod)
+    setDeleteModuleOpen(true)
   }
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -514,10 +618,6 @@ export default function ModulesPage() {
         return
       }
 
-      // #region agent log
-      console.log('[DEBUG] Lesson created:', { lessonId: lesson.id, lessonTitle: lesson.title, hasVideoUrl: !!lesson.video_url, videoUrl: lesson.video_url });
-      // #endregion
-
       // Auto-select the newly created lesson so user can immediately add video
       setSelectedLesson(lesson)
       
@@ -601,14 +701,25 @@ export default function ModulesPage() {
                 const completedCount = module.lessons?.filter(l => l.is_completed).length || 0
                 const totalCount = module.lessons?.length || 0
 
+                const isLocked = !isInstructor && moduleLockStatus[module.id]?.isLocked
+                const prerequisiteTitle = moduleLockStatus[module.id]?.prerequisiteModuleTitle
+
                 return (
-                  <GlassCard key={module.id} className="overflow-hidden">
+                  <GlassCard key={module.id} className={cn("overflow-hidden", isLocked && "opacity-60")}>
                     <button
-                      onClick={() => toggleModule(module.id)}
-                      className="w-full p-4 flex items-center gap-3 hover:bg-white/5 transition-colors"
+                      onClick={() => !isLocked && toggleModule(module.id)}
+                      className={cn(
+                        "w-full p-4 flex items-center gap-3 transition-colors",
+                        isLocked ? "cursor-not-allowed" : "hover:bg-white/5"
+                      )}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                        {isExpanded ? (
+                      <div className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
+                        isLocked ? "bg-yellow-500/20" : "bg-white/10"
+                      )}>
+                        {isLocked ? (
+                          <Lock className="w-4 h-4 text-yellow-400" />
+                        ) : isExpanded ? (
                           <ChevronDown className="w-4 h-4 text-white" />
                         ) : (
                           <ChevronRight className="w-4 h-4 text-white" />
@@ -620,25 +731,49 @@ export default function ModulesPage() {
                           {module.is_restricted && (
                             <Users className="w-3 h-3 text-[hsl(var(--theme-primary))]" />
                           )}
+                          {isLocked && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">
+                              Locked
+                            </span>
+                          )}
                         </div>
-                        <p className="text-xs text-[var(--text-muted)]">
-                          {completedCount}/{totalCount} lessons
-                        </p>
+                        {isLocked ? (
+                          <p className="text-xs text-yellow-400/70">
+                            Complete &quot;{prerequisiteTitle}&quot; first
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[var(--text-muted)]">
+                            {completedCount}/{totalCount} lessons
+                          </p>
+                        )}
                       </div>
                       {isInstructor && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-8 h-8 rounded-lg hover:bg-white/10"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleOpenAccess(module.id)
-                          }}
-                        >
-                          <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
-                        </Button>
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-lg hover:bg-white/10"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenAccess(module.id)
+                            }}
+                          >
+                            <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-lg hover:bg-red-500/20"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDeleteModuleDialog(module)
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </Button>
+                        </>
                       )}
-                      {completedCount === totalCount && totalCount > 0 && (
+                      {!isLocked && completedCount === totalCount && totalCount > 0 && (
                         <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
                       )}
                     </button>
@@ -746,9 +881,6 @@ export default function ModulesPage() {
                     </div>
 
                     {/* Video player or placeholder */}
-                    {/* #region agent log */}
-                    {(() => { console.log('[DEBUG] Video section:', { hasSelectedLesson: !!selectedLesson, lessonId: selectedLesson?.id, lessonTitle: selectedLesson?.title, hasVideoUrl: !!selectedLesson?.video_url, videoUrl: selectedLesson?.video_url, isInstructor, currentRole }); return null; })()}
-                    {/* #endregion */}
                     <div className="relative group aspect-video rounded-xl bg-black/50 flex items-center justify-center overflow-hidden">
                       {selectedLesson.video_url ? (
                         <>
@@ -773,15 +905,27 @@ export default function ModulesPage() {
                                   This lesson content is hosted on an external platform
                                 </p>
                               </div>
-                              <a
-                                href={selectedLesson.video_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                onClick={async () => {
+                                  // Mark lesson as complete when student clicks the external link
+                                  if (!isInstructor && selectedLesson && !selectedLesson.is_completed) {
+                                    await markLessonComplete(selectedLesson.id)
+                                    setVideoCompleted(true)
+                                  }
+                                  // Open the link in a new tab
+                                  window.open(selectedLesson.video_url, '_blank', 'noopener,noreferrer')
+                                }}
                                 className="px-6 py-3 rounded-xl bg-theme-gradient text-white font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
                               >
                                 <ExternalLink className="w-5 h-5" />
                                 Open Lesson Content
-                              </a>
+                              </button>
+                              {selectedLesson.is_completed && (
+                                <div className="flex items-center gap-2 text-emerald-400 text-sm">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Lesson completed
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <video
@@ -1077,6 +1221,44 @@ export default function ModulesPage() {
               />
             </div>
 
+            {/* Prerequisite Module Selector */}
+            <div className="space-y-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Prerequisite Module</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students must complete this module first
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={selectedPrerequisiteModuleId || "none"}
+                  onValueChange={(value) => setSelectedPrerequisiteModuleId(value === "none" ? null : value)}
+                >
+                  <SelectTrigger className="flex-1 bg-white/5 border-white/10">
+                    <SelectValue placeholder="No prerequisite" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No prerequisite</SelectItem>
+                    {modules
+                      .filter(m => m.id !== accessModuleId) // Can't be its own prerequisite
+                      .map(m => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.title}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="glass-theme"
+                  size="sm"
+                  onClick={handleSavePrerequisite}
+                  disabled={savingPrerequisite}
+                >
+                  {savingPrerequisite ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-white px-1">Assign Students</h4>
               <div className="max-h-[300px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
@@ -1221,6 +1403,54 @@ export default function ModulesPage() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Module Confirmation Dialog */}
+      <Dialog open={deleteModuleOpen} onOpenChange={setDeleteModuleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              Delete Module
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{moduleToDelete?.title}&quot;? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+            <p className="text-sm text-red-300">
+              This will permanently delete:
+            </p>
+            <ul className="mt-2 text-sm text-[var(--text-muted)] list-disc list-inside space-y-1">
+              <li>The module and all its settings</li>
+              <li>All {moduleToDelete?.lessons?.length || 0} lessons in this module</li>
+              <li>All student progress for these lessons</li>
+            </ul>
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button 
+              variant="glass" 
+              onClick={() => {
+                setDeleteModuleOpen(false)
+                setModuleToDelete(null)
+              }}
+              disabled={deletingModule}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteModule}
+              disabled={deletingModule}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {deletingModule ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete Module
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageContainer>

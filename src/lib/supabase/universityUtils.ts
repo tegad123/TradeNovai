@@ -37,6 +37,7 @@ export interface Module {
   order: number
   is_published: boolean
   is_restricted: boolean
+  prerequisite_module_id: string | null
   created_at: string
   lessons?: Lesson[]
 }
@@ -1924,6 +1925,274 @@ export async function removeStudentFromCourse(courseId: string, studentId: strin
 
   if (error) {
     console.error('Error removing student from course:', error)
+    return false
+  }
+
+  return true
+}
+
+// ============================================
+// MODULE PREREQUISITES
+// ============================================
+
+// Set prerequisite module for a module
+export async function setModulePrerequisite(moduleId: string, prerequisiteModuleId: string | null): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('modules')
+    .update({ prerequisite_module_id: prerequisiteModuleId })
+    .eq('id', moduleId)
+
+  if (error) {
+    console.error('Error setting module prerequisite:', error)
+    return false
+  }
+
+  return true
+}
+
+// Get prerequisite module for a module
+export async function getModulePrerequisite(moduleId: string): Promise<string | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('modules')
+    .select('prerequisite_module_id')
+    .eq('id', moduleId)
+    .single()
+
+  if (error || !data) return null
+  return data.prerequisite_module_id
+}
+
+// Check if a module is complete for a user (all lessons marked as completed)
+export async function isModuleComplete(moduleId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // Get all lessons in the module
+  const { data: lessons, error: lessonsError } = await supabase
+    .from('lessons')
+    .select('id')
+    .eq('module_id', moduleId)
+
+  if (lessonsError || !lessons || lessons.length === 0) return false
+
+  // Get completed lessons for this user
+  const lessonIds = lessons.map(l => l.id)
+  const { data: progress, error: progressError } = await supabase
+    .from('lesson_progress')
+    .select('lesson_id')
+    .eq('user_id', userId)
+    .eq('is_completed', true)
+    .in('lesson_id', lessonIds)
+
+  if (progressError) return false
+
+  // Module is complete if all lessons are completed
+  return progress?.length === lessons.length
+}
+
+// Check if a module is unlocked for a user
+export async function isModuleUnlocked(moduleId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // Get the module's prerequisite
+  const { data: moduleData, error } = await supabase
+    .from('modules')
+    .select('prerequisite_module_id')
+    .eq('id', moduleId)
+    .single()
+
+  if (error || !moduleData) return false
+
+  // No prerequisite means module is unlocked
+  if (!moduleData.prerequisite_module_id) return true
+
+  // Check if prerequisite is complete
+  return isModuleComplete(moduleData.prerequisite_module_id, userId)
+}
+
+// Get module completion status for all modules in a course (for UI display)
+export async function getModulesWithLockStatus(
+  courseId: string, 
+  userId: string
+): Promise<{ moduleId: string; isLocked: boolean; prerequisiteModuleId: string | null; prerequisiteModuleTitle: string | null }[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  // Get all modules with their prerequisites
+  const { data: modules, error } = await supabase
+    .from('modules')
+    .select('id, prerequisite_module_id, title')
+    .eq('course_id', courseId)
+    .order('order', { ascending: true })
+
+  if (error || !modules) return []
+
+  const result: { moduleId: string; isLocked: boolean; prerequisiteModuleId: string | null; prerequisiteModuleTitle: string | null }[] = []
+  
+  // Build a map of module titles
+  const moduleTitles: Record<string, string> = {}
+  modules.forEach(m => { moduleTitles[m.id] = m.title })
+
+  for (const mod of modules) {
+    const isUnlocked = await isModuleUnlocked(mod.id, userId)
+    result.push({
+      moduleId: mod.id,
+      isLocked: !isUnlocked,
+      prerequisiteModuleId: mod.prerequisite_module_id,
+      prerequisiteModuleTitle: mod.prerequisite_module_id ? moduleTitles[mod.prerequisite_module_id] || null : null
+    })
+  }
+
+  return result
+}
+
+// ============================================
+// ASSIGNMENT PREREQUISITES (Module-Based)
+// ============================================
+
+// Set assignment prerequisites (which modules must be completed)
+export async function setAssignmentPrerequisites(assignmentId: string, moduleIds: string[]): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // First, delete all existing prerequisites for this assignment
+  const { error: deleteError } = await supabase
+    .from('assignment_module_prerequisites')
+    .delete()
+    .eq('assignment_id', assignmentId)
+
+  if (deleteError) {
+    console.error('Error deleting existing assignment prerequisites:', deleteError)
+    return false
+  }
+
+  // If no modules, we're done
+  if (moduleIds.length === 0) return true
+
+  // Insert new prerequisites
+  const insertData = moduleIds.map(moduleId => ({
+    assignment_id: assignmentId,
+    module_id: moduleId
+  }))
+
+  const { error: insertError } = await supabase
+    .from('assignment_module_prerequisites')
+    .insert(insertData)
+
+  if (insertError) {
+    console.error('Error setting assignment prerequisites:', insertError)
+    return false
+  }
+
+  return true
+}
+
+// Get assignment prerequisites (module IDs)
+export async function getAssignmentPrerequisites(assignmentId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('assignment_module_prerequisites')
+    .select('module_id')
+    .eq('assignment_id', assignmentId)
+
+  if (error || !data) return []
+  return data.map(d => d.module_id)
+}
+
+// Check if an assignment is unlocked for a user (all prerequisite modules complete)
+export async function isAssignmentUnlocked(assignmentId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // Get prerequisites for this assignment
+  const prerequisites = await getAssignmentPrerequisites(assignmentId)
+
+  // No prerequisites means assignment is unlocked
+  if (prerequisites.length === 0) return true
+
+  // Check if all prerequisite modules are complete
+  for (const moduleId of prerequisites) {
+    const isComplete = await isModuleComplete(moduleId, userId)
+    if (!isComplete) return false
+  }
+
+  return true
+}
+
+// Get assignments with lock status for a user
+export async function getAssignmentsWithLockStatus(
+  courseId: string,
+  userId: string
+): Promise<{ assignmentId: string; isLocked: boolean; prerequisiteModuleIds: string[] }[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  // Get all assignments for the course
+  const { data: assignments, error } = await supabase
+    .from('assignments')
+    .select('id')
+    .eq('course_id', courseId)
+
+  if (error || !assignments) return []
+
+  const result: { assignmentId: string; isLocked: boolean; prerequisiteModuleIds: string[] }[] = []
+
+  for (const assignment of assignments) {
+    const prerequisiteModuleIds = await getAssignmentPrerequisites(assignment.id)
+    const isUnlocked = await isAssignmentUnlocked(assignment.id, userId)
+    result.push({
+      assignmentId: assignment.id,
+      isLocked: !isUnlocked,
+      prerequisiteModuleIds
+    })
+  }
+
+  return result
+}
+
+// ============================================
+// DELETE MODULES AND ASSIGNMENTS
+// ============================================
+
+// Delete a module and all its lessons (cascades via FK)
+export async function deleteModule(moduleId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('modules')
+    .delete()
+    .eq('id', moduleId)
+
+  if (error) {
+    console.error('Error deleting module:', error)
+    return false
+  }
+
+  return true
+}
+
+// Delete an assignment and all its submissions (cascades via FK)
+export async function deleteAssignment(assignmentId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('assignments')
+    .delete()
+    .eq('id', assignmentId)
+
+  if (error) {
+    console.error('Error deleting assignment:', error)
     return false
   }
 
