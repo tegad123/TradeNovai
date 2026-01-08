@@ -27,6 +27,7 @@ import {
 
 import { PageHeader } from "@/components/glass"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { 
   KPICard, 
   ChartCard, 
@@ -42,6 +43,7 @@ import { AddTradesWizard } from "@/components/add-trades"
 import { useDashboardLayout } from "@/lib/hooks/useDashboardLayout"
 import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import { createClientSafe } from "@/lib/supabase/browser"
+import { generateDemoTrades } from "@/lib/mockData"
 
 // Types
 interface TradeData {
@@ -201,12 +203,102 @@ const KPI_TOOLTIPS: Record<string, string> = {
   avgWinLoss: "Average winning trade size ÷ average losing trade size.",
 }
 
+// Build calendar data for a specific month from trades
+function buildCalendarDataForMonth(trades: TradeData[], targetMonth: Date) {
+  const year = targetMonth.getFullYear()
+  const month = targetMonth.getMonth()
+  const monthName = targetMonth.toLocaleString('default', { month: 'long' })
+  
+  // Get first and last day of the month
+  const firstDayOfMonth = new Date(year, month, 1)
+  const lastDayOfMonth = new Date(year, month + 1, 0)
+  const daysInMonth = lastDayOfMonth.getDate()
+  
+  // Get the day of week for the first day (0 = Sunday, 1 = Monday, etc)
+  // Adjust to make Monday = 0
+  let firstDayWeekday = firstDayOfMonth.getDay() - 1
+  if (firstDayWeekday < 0) firstDayWeekday = 6 // Sunday becomes 6
+  
+  // Group trades by date for this month
+  const pnlByDate: Record<number, number> = {}
+  
+  trades.forEach(trade => {
+    const exitDate = new Date(trade.exit_time)
+    if (exitDate.getFullYear() === year && exitDate.getMonth() === month) {
+      const day = exitDate.getDate()
+      pnlByDate[day] = (pnlByDate[day] || 0) + trade.pnl
+    }
+  })
+  
+  // Build weeks array
+  const weeks: { days: { date: number; pnl: number | null; isCurrentMonth: boolean }[]; weeklyTotal: number }[] = []
+  let currentWeek: { date: number; pnl: number | null; isCurrentMonth: boolean }[] = []
+  let weeklyTotal = 0
+  
+  // Add days from previous month to fill first week
+  const prevMonth = new Date(year, month, 0) // Last day of previous month
+  const prevMonthDays = prevMonth.getDate()
+  for (let i = firstDayWeekday - 1; i >= 0; i--) {
+    currentWeek.push({
+      date: prevMonthDays - i,
+      pnl: null,
+      isCurrentMonth: false,
+    })
+  }
+  
+  // Add days of current month
+  for (let day = 1; day <= daysInMonth; day++) {
+    const pnl = pnlByDate[day] !== undefined ? Math.round(pnlByDate[day] * 100) / 100 : null
+    currentWeek.push({
+      date: day,
+      pnl,
+      isCurrentMonth: true,
+    })
+    
+    if (pnl !== null) {
+      weeklyTotal += pnl
+    }
+    
+    // If we've completed a week (7 days)
+    if (currentWeek.length === 7) {
+      weeks.push({ days: currentWeek, weeklyTotal: Math.round(weeklyTotal * 100) / 100 })
+      currentWeek = []
+      weeklyTotal = 0
+    }
+  }
+  
+  // Add days from next month to fill last week
+  if (currentWeek.length > 0) {
+    let nextMonthDay = 1
+    while (currentWeek.length < 7) {
+      currentWeek.push({
+        date: nextMonthDay++,
+        pnl: null,
+        isCurrentMonth: false,
+      })
+    }
+    weeks.push({ days: currentWeek, weeklyTotal: Math.round(weeklyTotal * 100) / 100 })
+  }
+  
+  // Calculate monthly total
+  const monthlyTotal = Object.values(pnlByDate).reduce((sum, pnl) => sum + pnl, 0)
+  
+  return {
+    month: monthName,
+    year,
+    weeks,
+    monthlyTotal: Math.round(monthlyTotal * 100) / 100,
+  }
+}
+
 export default function DashboardPage() {
   const { user } = useSupabaseAuthContext()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [addTradesOpen, setAddTradesOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [trades, setTrades] = useState<TradeData[]>([])
+  const [accountMode, setAccountMode] = useState<'live' | 'demo'>('demo')
+  const [calendarMonth, setCalendarMonth] = useState(new Date())
   
   const { 
     layout, 
@@ -217,13 +309,39 @@ export default function DashboardPage() {
     isSectionEnabled 
   } = useDashboardLayout()
 
-  // Fetch trades
+  // Calendar month navigation handlers
+  const handlePrevMonth = () => {
+    setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+  }
+
+  const handleNextMonth = () => {
+    setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+  }
+
+  // Load account mode preference from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('dashboard-account-mode')
+    if (saved === 'live' || saved === 'demo') {
+      setAccountMode(saved)
+    }
+  }, [])
+
+  // Save account mode preference to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('dashboard-account-mode', accountMode)
+  }, [accountMode])
+
+  // Fetch trades (demo or live based on account mode)
   useEffect(() => {
     async function fetchTrades() {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:fetchTrades:entry',message:'fetchTrades called',data:{hasUser:!!user,userId:user?.id?.slice(-6)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-      // #endregion
+      // Demo mode: use generated sample data
+      if (accountMode === 'demo') {
+        setTrades(generateDemoTrades() as TradeData[])
+        setLoading(false)
+        return
+      }
 
+      // Live mode: fetch from Supabase
       if (!user) {
         setLoading(false)
         setTrades([])
@@ -231,33 +349,22 @@ export default function DashboardPage() {
       }
 
       const supabase = createClientSafe()
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:fetchTrades:supabase',message:'Supabase client check',data:{hasSupabase:!!supabase},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
       if (!supabase) {
         setLoading(false)
         return
       }
 
-      // Fetch last 30 days of trades
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:fetchTrades:beforeQuery',message:'About to query trades',data:{userId:user.id.slice(-6),fromDate:thirtyDaysAgo.toISOString().split('T')[0]},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H3,H4'})}).catch(()=>{});
-      // #endregion
+      // Fetch last 90 days of trades for live mode
+      const ninetyDaysAgo = new Date()
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
 
       const { data, error } = await supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'closed')
-        .gte('exit_time', thirtyDaysAgo.toISOString())
+        .gte('exit_time', ninetyDaysAgo.toISOString())
         .order('exit_time', { ascending: false })
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:fetchTrades:afterQuery',message:'Query result',data:{hasError:!!error,errorMessage:error?.message,tradesCount:data?.length||0,firstTradeId:data?.[0]?.id?.slice(-6)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2,H3,H4'})}).catch(()=>{});
-      // #endregion
 
       if (error) {
         console.error('Error fetching trades:', error)
@@ -269,30 +376,12 @@ export default function DashboardPage() {
     }
 
     fetchTrades()
-  }, [user])
+  }, [user, accountMode])
 
   // Calculate dashboard data
   const dashboardData = useMemo(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:calculateData:entry',message:'About to calculate dashboard data',data:{tradesCount:trades.length,firstTrade:trades[0]?{id:trades[0].id?.slice(-6),pnl:trades[0].pnl,exit_time:trades[0].exit_time,fees:trades[0].fees}:null},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
-    // #endregion
-    try {
-      const result = calculateDashboardData(trades)
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:calculateData:success',message:'Dashboard data calculated',data:{netPnL:result.netPnL,totalTrades:result.totalTrades,dailyPnLCount:result.dailyPnL.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
-      return result
-    } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:calculateData:error',message:'Error calculating dashboard data',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
-      throw err
-    }
+    return calculateDashboardData(trades)
   }, [trades])
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard:render:afterDashboardData',message:'dashboardData available',data:{netPnL:dashboardData.netPnL,totalTrades:dashboardData.totalTrades},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H7'})}).catch(()=>{});
-  // #endregion
 
   // KPI values derived from real data
   const kpiData = useMemo(() => ({
@@ -496,7 +585,21 @@ export default function DashboardPage() {
           : "Welcome back! Import trades to see your performance."
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Demo/Live Account Toggle */}
+            <div className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-1.5 border border-white/10">
+              <span className={`text-xs font-medium transition-colors ${accountMode === 'demo' ? 'text-[hsl(var(--theme-primary))]' : 'text-white/50'}`}>
+                Demo
+              </span>
+              <Switch 
+                checked={accountMode === 'live'} 
+                onCheckedChange={(checked) => setAccountMode(checked ? 'live' : 'demo')}
+                className="data-[state=checked]:bg-[hsl(var(--theme-primary))]"
+              />
+              <span className={`text-xs font-medium transition-colors ${accountMode === 'live' ? 'text-[hsl(var(--theme-primary))]' : 'text-white/50'}`}>
+                Live
+              </span>
+            </div>
             <Button 
               variant="glass-theme" 
               size="sm"
@@ -728,29 +831,17 @@ export default function DashboardPage() {
 
           {/* Calendar P&L */}
           {isSectionEnabled("calendar") && (() => {
-            // Build calendar data for CalendarPnLView
-            const today = new Date()
-            const currentMonth = today.toLocaleString('default', { month: 'long' })
-            const currentYear = today.getFullYear()
-            
-            // Convert weekProgressForCalendar to CalendarPnLView format
-            const calendarWeeks = weekProgressForCalendar.map(week => ({
-              days: week.days.map((day, idx) => ({
-                date: day.date || (idx + 1),
-                pnl: day.pnl,
-                isCurrentMonth: true,
-              })),
-              weeklyTotal: week.weekTotal || 0,
-            }))
-            
-            const monthlyTotal = calendarWeeks.reduce((sum, week) => sum + week.weeklyTotal, 0)
+            // Build calendar data for the selected month
+            const calendarData = buildCalendarDataForMonth(trades, calendarMonth)
             
             return (
               <CalendarPnLView 
-                month={currentMonth}
-                year={currentYear}
-                weeks={calendarWeeks}
-                monthlyTotal={monthlyTotal}
+                month={calendarData.month}
+                year={calendarData.year}
+                weeks={calendarData.weeks}
+                monthlyTotal={calendarData.monthlyTotal}
+                onPrevMonth={handlePrevMonth}
+                onNextMonth={handleNextMonth}
               />
             )
           })()}

@@ -230,3 +230,100 @@ export const mockCalendarData = {
   monthlyTotal: 2770,
 }
 
+// Trade data interface matching the dashboard's TradeData type
+interface DemoTradeData {
+  id: string
+  symbol: string
+  side: string
+  quantity: number
+  entry_price: number
+  exit_price: number
+  pnl: number
+  fees: number
+  entry_time: string
+  exit_time: string
+}
+
+// Generate realistic demo trades for the past 90 days
+export function generateDemoTrades(): DemoTradeData[] {
+  const symbols = ['AAPL', 'TSLA', 'NVDA', 'SPY', 'META', 'AMD', 'GOOGL', 'AMZN', 'MSFT', 'QQQ']
+  const trades: DemoTradeData[] = []
+  const now = new Date()
+  
+  // Generate 2-5 trades per trading day for the last 90 days
+  for (let daysAgo = 0; daysAgo < 90; daysAgo++) {
+    const tradeDate = new Date(now)
+    tradeDate.setDate(tradeDate.getDate() - daysAgo)
+    
+    // Skip weekends
+    const dayOfWeek = tradeDate.getDay()
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue
+    
+    // Generate 2-5 trades for this day
+    const tradesThisDay = Math.floor(Math.random() * 4) + 2
+    
+    for (let i = 0; i < tradesThisDay; i++) {
+      const symbol = symbols[Math.floor(Math.random() * symbols.length)]
+      const side = Math.random() > 0.5 ? 'long' : 'short'
+      const quantity = Math.floor(Math.random() * 50) + 10
+      
+      // Generate entry price based on symbol (realistic ranges)
+      const basePrices: Record<string, number> = {
+        'AAPL': 180, 'TSLA': 250, 'NVDA': 480, 'SPY': 475, 'META': 390,
+        'AMD': 145, 'GOOGL': 142, 'AMZN': 178, 'MSFT': 410, 'QQQ': 420
+      }
+      const basePrice = basePrices[symbol] || 100
+      const entryPrice = basePrice + (Math.random() - 0.5) * 20
+      
+      // Generate P&L with slight win bias (55% win rate)
+      const isWinner = Math.random() < 0.55
+      let pnlPercent: number
+      if (isWinner) {
+        // Winners: 0.5% to 3% gain
+        pnlPercent = 0.005 + Math.random() * 0.025
+      } else {
+        // Losers: 0.3% to 2% loss
+        pnlPercent = -(0.003 + Math.random() * 0.017)
+      }
+      
+      const exitPrice = side === 'long' 
+        ? entryPrice * (1 + pnlPercent)
+        : entryPrice * (1 - pnlPercent)
+      
+      const pnl = side === 'long'
+        ? (exitPrice - entryPrice) * quantity
+        : (entryPrice - exitPrice) * quantity
+      
+      const fees = Math.round((Math.random() * 3 + 1) * 100) / 100 // $1-4 in fees
+      
+      // Generate entry and exit times during market hours (9:30 AM - 4:00 PM)
+      const entryHour = 9 + Math.floor(Math.random() * 6) + (Math.random() > 0.5 ? 0.5 : 0)
+      const exitHour = entryHour + Math.random() * 2 + 0.25
+      
+      const entryTime = new Date(tradeDate)
+      entryTime.setHours(Math.floor(entryHour), Math.floor((entryHour % 1) * 60), 0, 0)
+      
+      const exitTime = new Date(tradeDate)
+      exitTime.setHours(Math.floor(exitHour), Math.floor((exitHour % 1) * 60), 0, 0)
+      
+      trades.push({
+        id: `demo-${daysAgo}-${i}-${Date.now()}`,
+        symbol,
+        side,
+        quantity,
+        entry_price: Math.round(entryPrice * 100) / 100,
+        exit_price: Math.round(exitPrice * 100) / 100,
+        pnl: Math.round(pnl * 100) / 100,
+        fees,
+        entry_time: entryTime.toISOString(),
+        exit_time: exitTime.toISOString(),
+      })
+    }
+  }
+  
+  // Sort by exit_time descending (most recent first)
+  trades.sort((a, b) => new Date(b.exit_time).getTime() - new Date(a.exit_time).getTime())
+  
+  return trades
+}
+
