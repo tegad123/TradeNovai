@@ -343,8 +343,38 @@ export default function DashboardPage() {
     }
   }, [kpiData, dashboardData])
 
-  // Week progress for tracker
-  const weekProgress = useMemo(() => {
+  // Week progress for tracker (7 days with day names for ProgressTrackerCard)
+  const weekProgressForTracker = useMemo(() => {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const startOfWeek = new Date(today)
+    startOfWeek.setDate(today.getDate() - dayOfWeek)
+    
+    const days: { day: string; score: number | null }[] = []
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(startOfWeek)
+      date.setDate(startOfWeek.getDate() + d)
+      const dateKey = date.toISOString().split('T')[0]
+      const dayPnl = dashboardData.dailyPnL.find(dp => dp.date === dateKey)
+      // Convert P&L to a score (positive = good score, negative = bad score)
+      let score: number | null = null
+      if (dayPnl?.pnl !== undefined) {
+        // Simple scoring: positive P&L gets higher score
+        score = dayPnl.pnl > 0 ? Math.min(100, 60 + (dayPnl.pnl / 10)) : 
+                dayPnl.pnl < 0 ? Math.max(0, 40 + (dayPnl.pnl / 10)) : 50
+      }
+      days.push({
+        day: dayNames[d],
+        score
+      })
+    }
+    
+    return days
+  }, [dashboardData.dailyPnL])
+
+  // Week progress for calendar (4 weeks with nested days structure)
+  const weekProgressForCalendar = useMemo(() => {
     const today = new Date()
     const dayOfWeek = today.getDay()
     const startOfWeek = new Date(today)
@@ -514,7 +544,7 @@ export default function DashboardPage() {
               )}
               {isSectionEnabled("progressTracker") && (
                 <ProgressTrackerCard
-                  weekData={weekProgress}
+                  weekData={weekProgressForTracker}
                   todayScore={kpiData.dailyWin.value}
                   onChecklistClick={() => console.log("Open checklist")}
                 />
@@ -695,8 +725,8 @@ export default function DashboardPage() {
             const currentMonth = today.toLocaleString('default', { month: 'long' })
             const currentYear = today.getFullYear()
             
-            // Convert weekProgress to CalendarPnLView format
-            const calendarWeeks = weekProgress.map(week => ({
+            // Convert weekProgressForCalendar to CalendarPnLView format
+            const calendarWeeks = weekProgressForCalendar.map(week => ({
               days: week.days.map((day, idx) => ({
                 date: day.date || (idx + 1),
                 pnl: day.pnl,
