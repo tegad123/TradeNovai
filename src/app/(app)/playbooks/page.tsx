@@ -299,7 +299,7 @@ export default function PlaybooksPage() {
           <DialogHeader>
             <DialogTitle>Delete Strategy</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{strategyToDelete?.name}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{strategyToDelete?.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
