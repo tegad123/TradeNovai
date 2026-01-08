@@ -763,7 +763,7 @@ export default function DashboardPage() {
         onOpenChange={setCustomizeOpen}
         layout={layout}
         onSave={async (newLayout) => {
-          await saveLayout(newLayout)
+          return await saveLayout(newLayout)
         }}
         onReset={resetLayout}
         saving={saving}

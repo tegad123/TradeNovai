@@ -73,7 +73,13 @@ async function getUserContext(userId: string) {
       tradeDate: t.closed_at ? new Date(t.closed_at).toISOString().split('T')[0] : '',
       notes: t.notes
     })),
-    journalEntries: journalEntries || [],
+    journalEntries: (journalEntries || []).map(e => ({
+      id: e.id,
+      content: e.content,
+      createdAt: e.created_at,
+      emotion: e.emotion,
+      tags: e.tags
+    })),
     goals
   }
 }
@@ -93,7 +99,7 @@ function buildContextMessage(context: {
   journalEntries: Array<{
     id: string
     content: string
-    created_at: string
+    createdAt: string
     emotion?: string
     tags?: string[]
   }>

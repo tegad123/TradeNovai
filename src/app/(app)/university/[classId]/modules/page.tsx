@@ -913,7 +913,9 @@ export default function ModulesPage() {
                                     setVideoCompleted(true)
                                   }
                                   // Open the link in a new tab
-                                  window.open(selectedLesson.video_url, '_blank', 'noopener,noreferrer')
+                                  if (selectedLesson.video_url) {
+                                    window.open(selectedLesson.video_url, '_blank', 'noopener,noreferrer')
+                                  }
                                 }}
                                 className="px-6 py-3 rounded-xl bg-theme-gradient text-white font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
                               >

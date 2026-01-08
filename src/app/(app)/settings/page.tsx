@@ -52,7 +52,7 @@ const TRADING_STYLES = [
 
 export default function SettingsPage() {
   const { user, signOut } = useSupabaseAuthContext()
-  const { theme, setTheme } = useTheme()
+  const { themeColor, setThemeColor, availableColors } = useTheme()
   
   // Settings state
   const [loading, setLoading] = useState(true)
@@ -197,18 +197,18 @@ export default function SettingsPage() {
         <div>
           <label className="text-sm text-[var(--text-muted)] mb-3 block">Accent Color</label>
           <div className="flex flex-wrap gap-3">
-            {THEME_COLORS.map((option) => (
+            {availableColors.map((option) => (
               <button
-                key={option.value}
-                onClick={() => setTheme(option.value)}
+                key={option.key}
+                onClick={() => setThemeColor(option.key)}
                 className={cn(
                   "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                  theme === option.value && "ring-2 ring-white ring-offset-2 ring-offset-[var(--theme-bg-color)]"
+                  themeColor === option.key && "ring-2 ring-white ring-offset-2 ring-offset-[var(--theme-bg-color)]"
                 )}
-                style={{ backgroundColor: option.color }}
-                title={option.label}
+                style={{ backgroundColor: `hsl(${option.colors.primary})` }}
+                title={option.key}
               >
-                {theme === option.value && (
+                {themeColor === option.key && (
                   <Check className="w-5 h-5 text-white" />
                 )}
               </button>
