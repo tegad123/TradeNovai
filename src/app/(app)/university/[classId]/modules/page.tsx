@@ -886,13 +886,51 @@ export default function ModulesPage() {
                         <>
                           {/* Show embedded iframe for YouTube/Vimeo, native player for direct videos, or external link button */}
                           {getVideoProvider(selectedLesson.video_url) === 'youtube' || getVideoProvider(selectedLesson.video_url) === 'vimeo' ? (
-                            <iframe
-                              src={getEmbedUrl(selectedLesson.video_url) || ''}
-                              className="w-full h-full"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                              title={selectedLesson.title}
-                            />
+                            <div className="w-full h-full flex flex-col">
+                              <iframe
+                                src={getEmbedUrl(selectedLesson.video_url) || ''}
+                                className="w-full flex-1"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                title={selectedLesson.title}
+                              />
+                              {/* Mark complete button for YouTube/Vimeo - we can't detect video end due to iframe security */}
+                              {!isInstructor && (
+                                <div className="p-4 bg-black/30 backdrop-blur-sm flex items-center justify-between">
+                                  {selectedLesson.is_completed ? (
+                                    <div className="flex items-center gap-2 text-emerald-400 text-sm">
+                                      <CheckCircle2 className="w-4 h-4" />
+                                      Lesson completed
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-[var(--text-muted)]">
+                                      Click the button when you&apos;ve finished watching
+                                    </p>
+                                  )}
+                                  {!selectedLesson.is_completed && (
+                                    <button
+                                      onClick={async () => {
+                                        // #region agent log
+                                        console.log('[DEBUG] YouTube/Vimeo Mark Complete clicked', {lessonId:selectedLesson.id});
+                                        // #endregion
+                                        const result = await markLessonComplete(selectedLesson.id)
+                                        // #region agent log
+                                        console.log('[DEBUG] markLessonComplete returned', {result});
+                                        // #endregion
+                                        if (result) {
+                                          setSelectedLesson(prev => prev ? { ...prev, is_completed: true } : null)
+                                          setVideoCompleted(true)
+                                        }
+                                      }}
+                                      className="px-4 py-2 rounded-lg bg-theme-gradient text-white text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-opacity"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4" />
+                                      Mark as Complete
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           ) : getVideoProvider(selectedLesson.video_url) === 'external' ? (
                             /* External link (Whop, etc.) - show button to open in new tab */
                             <div className="flex flex-col items-center justify-center gap-4 p-8">
