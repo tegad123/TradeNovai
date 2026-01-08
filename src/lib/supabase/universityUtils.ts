@@ -556,8 +556,16 @@ export async function markLessonComplete(
   lessonId: string,
   completed: boolean = true
 ): Promise<boolean> {
+  // #region agent log
+  console.log('[DEBUG] Supabase markLessonComplete called', {userId,lessonId,completed});
+  // #endregion
   const supabase = getClient()
-  if (!supabase) return false
+  if (!supabase) {
+    // #region agent log
+    console.log('[DEBUG] No Supabase client!');
+    // #endregion
+    return false
+  }
 
   const { error } = await supabase
     .from('lesson_progress')
@@ -571,10 +579,16 @@ export async function markLessonComplete(
     })
 
   if (error) {
+    // #region agent log
+    console.log('[DEBUG] Supabase upsert ERROR', {error:error.message,code:error.code,details:error.details});
+    // #endregion
     console.error('Error updating lesson progress:', error)
     return false
   }
 
+  // #region agent log
+  console.log('[DEBUG] Supabase upsert SUCCESS', {userId,lessonId,completed});
+  // #endregion
   return true
 }
 

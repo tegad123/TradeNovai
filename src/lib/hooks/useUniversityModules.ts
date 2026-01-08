@@ -62,9 +62,15 @@ export function useUniversityModules(courseId: string | null) {
     lessonId: string, 
     completed: boolean = true
   ): Promise<boolean> => {
+    // #region agent log
+    console.log('[DEBUG] Hook markLessonComplete called', {lessonId,completed,hasUser:!!user,userId:user?.id});
+    // #endregion
     if (!user) return false
 
     const success = await markLessonCompleteUtil(user.id, lessonId, completed)
+    // #region agent log
+    console.log('[DEBUG] Hook markLessonCompleteUtil returned', {success,lessonId,completed});
+    // #endregion
     
     if (success) {
       // Update local state
