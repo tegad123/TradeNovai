@@ -807,15 +807,6 @@ export async function getCourseSubmissions(courseId: string): Promise<Submission
     .eq('assignment.course_id', courseId)
     .order('submitted_at', { ascending: false })
 
-  // #region agent log
-  console.log('[DEBUG] getCourseSubmissions raw data:', { 
-    courseId,
-    count: data?.length,
-    firstSubmission: data?.[0],
-    fileUrls: data?.map(s => ({ id: s.id, file_url: s.file_url, attachments: s.attachments }))
-  });
-  // #endregion
-
   if (error) {
     console.error('Error fetching course submissions:', error)
     return []
@@ -2206,5 +2197,165 @@ export async function deleteAssignment(assignmentId: string): Promise<boolean> {
   }
 
   return true
+}
+
+// ============================================
+// MODULE ASSIGNMENT PREREQUISITES
+// ============================================
+// These functions manage required assignments that must be completed
+// before a module becomes accessible to students.
+
+// Set required assignments for a module (replaces existing)
+export async function setModuleRequiredAssignments(
+  moduleId: string,
+  assignmentIds: string[]
+): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // First delete existing prerequisites for this module
+  const { error: deleteError } = await supabase
+    .from('module_assignment_prerequisites')
+    .delete()
+    .eq('module_id', moduleId)
+
+  if (deleteError) {
+    console.error('Error clearing module assignment prerequisites:', deleteError)
+    return false
+  }
+
+  // If no assignments to add, we're done
+  if (assignmentIds.length === 0) return true
+
+  // Insert new prerequisites
+  const records = assignmentIds.map(assignmentId => ({
+    module_id: moduleId,
+    assignment_id: assignmentId
+  }))
+
+  const { error: insertError } = await supabase
+    .from('module_assignment_prerequisites')
+    .insert(records)
+
+  if (insertError) {
+    console.error('Error setting module assignment prerequisites:', insertError)
+    return false
+  }
+
+  return true
+}
+
+// Get required assignments for a module
+export async function getModuleRequiredAssignments(moduleId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('module_assignment_prerequisites')
+    .select('assignment_id')
+    .eq('module_id', moduleId)
+
+  if (error || !data) return []
+  return data.map(d => d.assignment_id)
+}
+
+// Check if an assignment is completed (graded) by a user
+export async function isAssignmentCompleted(assignmentId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('id, status')
+    .eq('assignment_id', assignmentId)
+    .eq('student_id', userId)
+    .eq('status', 'graded')
+    .single()
+
+  if (error || !data) return false
+  return true
+}
+
+// Check if a module is unlocked for a user (checks both module prerequisites AND required assignments)
+export async function isModuleFullyUnlocked(moduleId: string, userId: string): Promise<{
+  isUnlocked: boolean
+  blockedByModule: boolean
+  blockedByAssignments: boolean
+  requiredAssignmentIds: string[]
+  incompleteAssignmentIds: string[]
+}> {
+  const supabase = getClient()
+  if (!supabase) return {
+    isUnlocked: false,
+    blockedByModule: false,
+    blockedByAssignments: false,
+    requiredAssignmentIds: [],
+    incompleteAssignmentIds: []
+  }
+
+  // Check prerequisite module
+  const isModuleUnlockedResult = await isModuleUnlocked(moduleId, userId)
+  const blockedByModule = !isModuleUnlockedResult
+
+  // Get required assignments
+  const requiredAssignmentIds = await getModuleRequiredAssignments(moduleId)
+  
+  // Check which assignments are incomplete
+  const incompleteAssignmentIds: string[] = []
+  for (const assignmentId of requiredAssignmentIds) {
+    const isComplete = await isAssignmentCompleted(assignmentId, userId)
+    if (!isComplete) {
+      incompleteAssignmentIds.push(assignmentId)
+    }
+  }
+
+  const blockedByAssignments = incompleteAssignmentIds.length > 0
+
+  return {
+    isUnlocked: !blockedByModule && !blockedByAssignments,
+    blockedByModule,
+    blockedByAssignments,
+    requiredAssignmentIds,
+    incompleteAssignmentIds
+  }
+}
+
+// Get modules with full lock status (including assignment requirements)
+export async function getModulesWithFullLockStatus(
+  courseId: string,
+  userId: string
+): Promise<Map<string, {
+  isLocked: boolean
+  blockedByModule: boolean
+  blockedByAssignments: boolean
+  prerequisiteModuleId: string | null
+  requiredAssignmentIds: string[]
+  incompleteAssignmentIds: string[]
+}>> {
+  const supabase = getClient()
+  const result = new Map()
+  if (!supabase) return result
+
+  // Get all modules for the course
+  const { data: modules, error } = await supabase
+    .from('modules')
+    .select('id, prerequisite_module_id')
+    .eq('course_id', courseId)
+
+  if (error || !modules) return result
+
+  for (const module of modules) {
+    const lockStatus = await isModuleFullyUnlocked(module.id, userId)
+    result.set(module.id, {
+      isLocked: !lockStatus.isUnlocked,
+      blockedByModule: lockStatus.blockedByModule,
+      blockedByAssignments: lockStatus.blockedByAssignments,
+      prerequisiteModuleId: module.prerequisite_module_id,
+      requiredAssignmentIds: lockStatus.requiredAssignmentIds,
+      incompleteAssignmentIds: lockStatus.incompleteAssignmentIds
+    })
+  }
+
+  return result
 }
 

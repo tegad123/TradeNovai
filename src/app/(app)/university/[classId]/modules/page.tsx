@@ -41,9 +41,14 @@ import {
   setModulePrerequisite,
   getModulesWithLockStatus,
   deleteModule as deleteModuleUtil,
+  setModuleRequiredAssignments,
+  getModuleRequiredAssignments,
+  getModulesWithFullLockStatus,
+  getAssignmentsByCourse,
   type Lesson, 
   type UserProfile,
-  type Module
+  type Module,
+  type Assignment
 } from "@/lib/supabase/universityUtils"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -165,9 +170,22 @@ export default function ModulesPage() {
   const [publishingModule, setPublishingModule] = useState(false)
   
   // Module prerequisites state
-  const [moduleLockStatus, setModuleLockStatus] = useState<Record<string, { isLocked: boolean; prerequisiteModuleId: string | null; prerequisiteModuleTitle: string | null }>>({})
+  const [moduleLockStatus, setModuleLockStatus] = useState<Record<string, { 
+    isLocked: boolean
+    blockedByModule: boolean
+    blockedByAssignments: boolean
+    prerequisiteModuleId: string | null
+    prerequisiteModuleTitle: string | null
+    requiredAssignmentIds: string[]
+    incompleteAssignmentIds: string[]
+  }>>({})
   const [selectedPrerequisiteModuleId, setSelectedPrerequisiteModuleId] = useState<string | null>(null)
   const [savingPrerequisite, setSavingPrerequisite] = useState(false)
+  
+  // Required assignments state
+  const [courseAssignments, setCourseAssignments] = useState<Assignment[]>([])
+  const [selectedRequiredAssignments, setSelectedRequiredAssignments] = useState<string[]>([])
+  const [savingRequiredAssignments, setSavingRequiredAssignments] = useState(false)
   
   // Delete module state
   const [deleteModuleOpen, setDeleteModuleOpen] = useState(false)
@@ -275,13 +293,27 @@ export default function ModulesPage() {
     async function loadLockStatus() {
       if (!currentCourse?.id || !currentUser?.id || isInstructor) return
       
-      const lockData = await getModulesWithLockStatus(currentCourse.id, currentUser.id)
-      const lockMap: Record<string, { isLocked: boolean; prerequisiteModuleId: string | null; prerequisiteModuleTitle: string | null }> = {}
-      lockData.forEach(item => {
-        lockMap[item.moduleId] = {
+      const lockData = await getModulesWithFullLockStatus(currentCourse.id, currentUser.id)
+      const lockMap: Record<string, { 
+        isLocked: boolean
+        blockedByModule: boolean
+        blockedByAssignments: boolean
+        prerequisiteModuleId: string | null
+        prerequisiteModuleTitle: string | null
+        requiredAssignmentIds: string[]
+        incompleteAssignmentIds: string[]
+      }> = {}
+      
+      lockData.forEach((item, moduleId) => {
+        const prereqMod = modules.find(m => m.id === item.prerequisiteModuleId)
+        lockMap[moduleId] = {
           isLocked: item.isLocked,
+          blockedByModule: item.blockedByModule,
+          blockedByAssignments: item.blockedByAssignments,
           prerequisiteModuleId: item.prerequisiteModuleId,
-          prerequisiteModuleTitle: item.prerequisiteModuleTitle
+          prerequisiteModuleTitle: prereqMod?.title || null,
+          requiredAssignmentIds: item.requiredAssignmentIds,
+          incompleteAssignmentIds: item.incompleteAssignmentIds
         }
       })
       setModuleLockStatus(lockMap)
@@ -290,13 +322,28 @@ export default function ModulesPage() {
     loadLockStatus()
   }, [currentCourse?.id, currentUser?.id, isInstructor, modules])
 
-  // Set selected prerequisite when opening manage access dialog
+  // Set selected prerequisite and load required assignments when opening manage access dialog
   useEffect(() => {
     if (accessModuleId && manageAccessOpen) {
       const mod = modules.find(m => m.id === accessModuleId)
       setSelectedPrerequisiteModuleId(mod?.prerequisite_module_id || null)
+      
+      // Load course assignments and module's required assignments
+      const loadAssignmentsData = async () => {
+        if (!currentCourse?.id) return
+        
+        // Load all assignments for the course
+        const assignments = await getAssignmentsByCourse(currentCourse.id)
+        setCourseAssignments(assignments)
+        
+        // Load required assignments for this module
+        const requiredIds = await getModuleRequiredAssignments(accessModuleId)
+        setSelectedRequiredAssignments(requiredIds)
+      }
+      
+      loadAssignmentsData()
     }
-  }, [accessModuleId, manageAccessOpen, modules])
+  }, [accessModuleId, manageAccessOpen, modules, currentCourse?.id])
 
   const goToNextLesson = () => {
     if (nextLesson) {
@@ -414,6 +461,30 @@ export default function ModulesPage() {
     } finally {
       setSavingPrerequisite(false)
     }
+  }
+
+  const handleSaveRequiredAssignments = async () => {
+    if (!accessModuleId) return
+    
+    setSavingRequiredAssignments(true)
+    try {
+      const success = await setModuleRequiredAssignments(accessModuleId, selectedRequiredAssignments)
+      if (!success) {
+        alert('Failed to save required assignments')
+      }
+    } catch (error) {
+      console.error('Save required assignments error:', error)
+    } finally {
+      setSavingRequiredAssignments(false)
+    }
+  }
+
+  const toggleRequiredAssignment = (assignmentId: string) => {
+    setSelectedRequiredAssignments(prev => 
+      prev.includes(assignmentId)
+        ? prev.filter(id => id !== assignmentId)
+        : [...prev, assignmentId]
+    )
   }
 
   const handleDeleteModule = async () => {
@@ -701,8 +772,24 @@ export default function ModulesPage() {
                 const completedCount = module.lessons?.filter(l => l.is_completed).length || 0
                 const totalCount = module.lessons?.length || 0
 
-                const isLocked = !isInstructor && moduleLockStatus[module.id]?.isLocked
-                const prerequisiteTitle = moduleLockStatus[module.id]?.prerequisiteModuleTitle
+                const lockStatus = moduleLockStatus[module.id]
+                const isLocked = !isInstructor && lockStatus?.isLocked
+                const prerequisiteTitle = lockStatus?.prerequisiteModuleTitle
+                const blockedByModule = lockStatus?.blockedByModule
+                const blockedByAssignments = lockStatus?.blockedByAssignments
+                const incompleteCount = lockStatus?.incompleteAssignmentIds?.length || 0
+
+                // Build lock message
+                let lockMessage = ''
+                if (isLocked) {
+                  if (blockedByModule && prerequisiteTitle) {
+                    lockMessage = `Complete "${prerequisiteTitle}" first`
+                  }
+                  if (blockedByAssignments) {
+                    if (lockMessage) lockMessage += ' and '
+                    lockMessage += `complete ${incompleteCount} assignment${incompleteCount !== 1 ? 's' : ''}`
+                  }
+                }
 
                 return (
                   <GlassCard key={module.id} className={cn("overflow-hidden", isLocked && "opacity-60")}>
@@ -739,7 +826,7 @@ export default function ModulesPage() {
                         </div>
                         {isLocked ? (
                           <p className="text-xs text-yellow-400/70">
-                            Complete &quot;{prerequisiteTitle}&quot; first
+                            {lockMessage}
                           </p>
                         ) : (
                           <p className="text-xs text-[var(--text-muted)]">
@@ -1291,6 +1378,64 @@ export default function ModulesPage() {
                   {savingPrerequisite ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
                 </Button>
               </div>
+            </div>
+
+            {/* Required Assignments Selector */}
+            <div className="space-y-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Required Assignments</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students must complete these assignments before accessing this module
+                </div>
+              </div>
+              <div className="max-h-[150px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {courseAssignments.length > 0 ? (
+                  courseAssignments.map(assignment => (
+                    <div
+                      key={assignment.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10"
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className={cn(
+                          "w-4 h-4",
+                          selectedRequiredAssignments.includes(assignment.id)
+                            ? "text-[hsl(var(--theme-primary))]"
+                            : "text-white/30"
+                        )} />
+                        <span className="text-sm text-white truncate max-w-[200px]">
+                          {assignment.title}
+                        </span>
+                      </div>
+                      <Switch
+                        checked={selectedRequiredAssignments.includes(assignment.id)}
+                        onCheckedChange={() => toggleRequiredAssignment(assignment.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-[var(--text-muted)] text-center py-2">
+                    No assignments in this course yet.
+                  </p>
+                )}
+              </div>
+              {courseAssignments.length > 0 && (
+                <Button
+                  variant="glass-theme"
+                  size="sm"
+                  className="w-full"
+                  onClick={handleSaveRequiredAssignments}
+                  disabled={savingRequiredAssignments}
+                >
+                  {savingRequiredAssignments ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Required Assignments'
+                  )}
+                </Button>
+              )}
             </div>
 
             <div className="space-y-3">
