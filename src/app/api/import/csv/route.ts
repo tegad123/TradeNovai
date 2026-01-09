@@ -235,6 +235,35 @@ async function importTradovateFormat(
   try { await fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'import/csv:afterSaveTrades',message:'Trades saved',data:{created:tradesCreated,updated:tradesUpdated,duplicates:tradeDuplicates,userId:userId.slice(-6)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}); } catch(e){}
   // #endregion
 
+  // Save import job metadata for AI context
+  if (tradesCreated > 0) {
+    try {
+      // Calculate date range and symbols from created trades
+      const closedTrades = tradesToSave.filter(t => t.status === 'closed')
+      const dates = closedTrades.map(t => new Date(t.entryTime)).filter(d => !isNaN(d.getTime()))
+      const symbols = Array.from(new Set(closedTrades.map(t => t.symbol)))
+      const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+      
+      const dateRangeStart = dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))) : null
+      const dateRangeEnd = dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : null
+      
+      await supabase.from('import_jobs').insert({
+        user_id: userId,
+        broker,
+        trades_imported: tradesCreated,
+        executions_imported: executionsSaved,
+        duplicates_skipped: execDuplicates + tradeDuplicates,
+        date_range_start: dateRangeStart?.toISOString(),
+        date_range_end: dateRangeEnd?.toISOString(),
+        symbols: symbols,
+        total_pnl: totalPnl
+      })
+    } catch (importJobError) {
+      // Don't fail the import if saving metadata fails
+      console.warn('[Import] Failed to save import job metadata:', importJobError)
+    }
+  }
+
   const result = {
     success: true,
     executionsImported: executionsSaved,

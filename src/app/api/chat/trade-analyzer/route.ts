@@ -4,10 +4,10 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { 
   TRADE_ANALYZER_SYSTEM_PROMPT,
-  formatTradesForContext,
   formatJournalEntriesForContext,
   parseActionsFromResponse
 } from '@/lib/ai/tradeAnalyzerPrompt'
+import { getTradeContext, formatTradeContextForAI } from '@/lib/ai/tradeContext'
 
 // Use Node.js runtime for Supabase access
 export const runtime = "nodejs"
@@ -37,184 +37,63 @@ async function createClient() {
   )
 }
 
-// Fetch user context for AI
-async function getUserContext(userId: string) {
-  const supabase = await createClient()
-  
-  // Fetch recent trades (table should exist)
-  let trades: Array<{
-    id: string
-    symbol: string
-    side: string
-    entry_price: number
-    exit_price: number
-    pnl: number
-    closed_at: string | null
-    notes: string | null
-  }> = []
-  
-  try {
-    const { data, error } = await supabase
-      .from('trades')
-      .select('id, symbol, side, entry_price, exit_price, pnl, closed_at, notes')
-      .eq('user_id', userId)
-      .eq('status', 'closed')
-      .order('closed_at', { ascending: false })
-      .limit(10)
-    
-    if (!error && data) {
-      trades = data
-    }
-  } catch (e) {
-    console.warn('Failed to fetch trades for context:', e)
-  }
+// Fetch additional context (journal entries and goals) for AI
+async function getAdditionalContext(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+): Promise<string> {
+  let output = ''
   
   // Fetch recent journal entries (table may not exist)
-  let journalEntries: Array<{
-    id: string
-    content: string
-    created_at: string
-    emotion: string | null
-    tags: string[] | null
-  }> = []
-  
   try {
-    const { data, error } = await supabase
+    const { data: journalEntries, error } = await supabase
       .from('journal_entries')
       .select('id, content, created_at, emotion, tags')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5)
     
-    if (!error && data) {
-      journalEntries = data
+    if (!error && journalEntries && journalEntries.length > 0) {
+      const formatted = journalEntries.map(e => ({
+        id: e.id,
+        content: e.content,
+        createdAt: e.created_at,
+        emotion: e.emotion ?? undefined,
+        tags: e.tags ?? undefined
+      }))
+      output += `\n### Recent Journal Entries:\n${formatJournalEntriesForContext(formatted)}\n`
     }
-  } catch (e) {
+  } catch {
     // Table may not exist yet, that's okay
-    console.warn('Failed to fetch journal entries (table may not exist):', e)
   }
   
   // Fetch trading goals (table may not exist)
-  let goals: {
-    max_risk_per_trade?: number
-    max_daily_loss?: number
-    daily_profit_target?: number
-    weekly_goals?: string
-    focus_areas?: string[]
-    entry_rules?: string[]
-    exit_rules?: string[]
-  } | null = null
-  
   try {
-    const { data, error } = await supabase
+    const { data: goals, error } = await supabase
       .from('user_trading_goals')
       .select('*')
       .eq('user_id', userId)
       .single()
     
-    if (!error && data) {
-      goals = data
+    if (!error && goals) {
+      const goalParts: string[] = []
+      if (goals.max_risk_per_trade) goalParts.push(`Max risk per trade: $${goals.max_risk_per_trade}`)
+      if (goals.max_daily_loss) goalParts.push(`Max daily loss: $${goals.max_daily_loss}`)
+      if (goals.daily_profit_target) goalParts.push(`Daily profit target: $${goals.daily_profit_target}`)
+      if (goals.weekly_goals) goalParts.push(`Weekly goals: ${goals.weekly_goals}`)
+      if (goals.focus_areas?.length) goalParts.push(`Focus areas: ${goals.focus_areas.join(', ')}`)
+      if (goals.entry_rules?.length) goalParts.push(`Entry rules: ${goals.entry_rules.join('; ')}`)
+      if (goals.exit_rules?.length) goalParts.push(`Exit rules: ${goals.exit_rules.join('; ')}`)
+      
+      if (goalParts.length > 0) {
+        output += `\n### Trading Goals & Rules:\n${goalParts.join('\n')}\n`
+      }
     }
-  } catch (e) {
+  } catch {
     // Table may not exist yet, that's okay
-    console.warn('Failed to fetch trading goals (table may not exist):', e)
   }
   
-  return {
-    trades: trades.map(t => ({
-      id: t.id,
-      symbol: t.symbol,
-      side: t.side,
-      entryPrice: t.entry_price,
-      exitPrice: t.exit_price,
-      pnl: t.pnl,
-      tradeDate: t.closed_at ? new Date(t.closed_at).toISOString().split('T')[0] : '',
-      notes: t.notes ?? undefined
-    })),
-    journalEntries: journalEntries.map(e => ({
-      id: e.id,
-      content: e.content,
-      createdAt: e.created_at,
-      emotion: e.emotion ?? undefined,
-      tags: e.tags ?? undefined
-    })),
-    goals
-  }
-}
-
-// Build context message for AI
-function buildContextMessage(context: {
-  trades: Array<{
-    id: string
-    symbol: string
-    side: string
-    entryPrice: number
-    exitPrice: number
-    pnl: number
-    tradeDate: string
-    notes?: string
-  }>
-  journalEntries: Array<{
-    id: string
-    content: string
-    createdAt: string
-    emotion?: string
-    tags?: string[]
-  }>
-  goals: {
-    max_risk_per_trade?: number
-    max_daily_loss?: number
-    daily_profit_target?: number
-    weekly_goals?: string
-    focus_areas?: string[]
-    entry_rules?: string[]
-    exit_rules?: string[]
-  } | null
-}): string {
-  const tradesFormatted = formatTradesForContext(context.trades)
-  const journalFormatted = formatJournalEntriesForContext(context.journalEntries)
-  
-  let goalsFormatted = 'No trading goals set.'
-  if (context.goals) {
-    const goalParts: string[] = []
-    if (context.goals.max_risk_per_trade) {
-      goalParts.push(`Max risk per trade: $${context.goals.max_risk_per_trade}`)
-    }
-    if (context.goals.max_daily_loss) {
-      goalParts.push(`Max daily loss: $${context.goals.max_daily_loss}`)
-    }
-    if (context.goals.daily_profit_target) {
-      goalParts.push(`Daily profit target: $${context.goals.daily_profit_target}`)
-    }
-    if (context.goals.weekly_goals) {
-      goalParts.push(`Weekly goals: ${context.goals.weekly_goals}`)
-    }
-    if (context.goals.focus_areas?.length) {
-      goalParts.push(`Focus areas: ${context.goals.focus_areas.join(', ')}`)
-    }
-    if (context.goals.entry_rules?.length) {
-      goalParts.push(`Entry rules: ${context.goals.entry_rules.join('; ')}`)
-    }
-    if (context.goals.exit_rules?.length) {
-      goalParts.push(`Exit rules: ${context.goals.exit_rules.join('; ')}`)
-    }
-    if (goalParts.length > 0) {
-      goalsFormatted = goalParts.join('\n')
-    }
-  }
-
-  return `
-## User's Trading Context:
-
-### Recent Trades (Last ${context.trades.length}):
-${tradesFormatted}
-
-### Recent Journal Entries:
-${journalFormatted}
-
-### Trading Goals & Rules:
-${goalsFormatted}
-`
+  return output
 }
 
 export async function POST(req: Request) {
@@ -243,14 +122,19 @@ export async function POST(req: Request) {
       })
     }
 
-    // Build system prompt with context
+    // Build system prompt with comprehensive trade context
     let systemPrompt = TRADE_ANALYZER_SYSTEM_PROMPT
     
     if (includeContext) {
       try {
-        const context = await getUserContext(user.id)
-        const contextMessage = buildContextMessage(context)
-        systemPrompt = `${TRADE_ANALYZER_SYSTEM_PROMPT}\n\n${contextMessage}`
+        // Get comprehensive trade context
+        const tradeContext = await getTradeContext(supabase, user.id, { limit: 50 })
+        const tradeContextFormatted = formatTradeContextForAI(tradeContext)
+        
+        // Also get journal entries and goals for additional context
+        const additionalContext = await getAdditionalContext(supabase, user.id)
+        
+        systemPrompt = `${TRADE_ANALYZER_SYSTEM_PROMPT}\n\n${tradeContextFormatted}\n\n${additionalContext}`
       } catch (contextError) {
         // Log the error but continue without context - tables may not exist yet
         console.warn('Failed to load user context, continuing without:', contextError)

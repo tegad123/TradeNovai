@@ -128,26 +128,10 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
     });
   };
 
-  // Quick action handlers
-  const handleLogTrade = () => {
-    const prompt = "I want to log a trade. Please help me record it.";
-    handleInputChange({ target: { value: prompt } } as React.ChangeEvent<HTMLInputElement>);
-  };
-
-  const handleAddJournalNote = () => {
-    const prompt = "I want to add a journal note about my trading today.";
-    handleInputChange({ target: { value: prompt } } as React.ChangeEvent<HTMLInputElement>);
-  };
-
-  const handleAnalyzeTrades = () => {
-    const prompt = "Analyze my recent trades and tell me what patterns you see.";
-    handleInputChange({ target: { value: prompt } } as React.ChangeEvent<HTMLInputElement>);
-  };
-
-  const handleReviewPerformance = () => {
-    const prompt = "Review my trading performance and suggest areas for improvement.";
-    handleInputChange({ target: { value: prompt } } as React.ChangeEvent<HTMLInputElement>);
-  };
+  // Quick action handler - sends a prompt directly
+  const handleSendPrompt = useCallback((prompt: string) => {
+    append({ role: "user", content: prompt });
+  }, [append]);
 
   if (authLoading) {
     return (
@@ -182,40 +166,40 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
             <div className="space-y-2">
               <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">Quick Actions</p>
               <button
-                onClick={handleLogTrade}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors text-left"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span className="text-sm">Log a Trade</span>
-              </button>
-              <button
-                onClick={handleAddJournalNote}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors text-left"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                <span className="text-sm">Journal Note</span>
-              </button>
-              <button
-                onClick={handleAnalyzeTrades}
+                onClick={() => handleSendPrompt("Summarize my trading performance. What are my key stats?")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors text-left"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
-                <span className="text-sm">Analyze Patterns</span>
+                <span className="text-sm">Summarize Trades</span>
               </button>
               <button
-                onClick={handleReviewPerformance}
+                onClick={() => handleSendPrompt("What trades do you have access to? Tell me about my data.")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors text-left"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <span className="text-sm">Review Performance</span>
+                <span className="text-sm">What Did I Upload?</span>
+              </button>
+              <button
+                onClick={() => handleSendPrompt("What patterns are causing my losses? Give me 3 things to work on.")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors text-left"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span className="text-sm">Find Loss Patterns</span>
+              </button>
+              <button
+                onClick={() => handleSendPrompt("Help me write a journal entry for today.")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors text-left"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span className="text-sm">Journal Entry</span>
               </button>
             </div>
           </div>
@@ -365,12 +349,7 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
 
             {/* Quick Actions (shown when no messages) */}
             {messages.length === 0 && (
-              <QuickActions
-                onLogTrade={handleLogTrade}
-                onAddJournalNote={handleAddJournalNote}
-                onAnalyzeTrades={handleAnalyzeTrades}
-                onReviewPerformance={handleReviewPerformance}
-              />
+              <QuickActions onSendPrompt={handleSendPrompt} />
             )}
 
             {/* Input */}
