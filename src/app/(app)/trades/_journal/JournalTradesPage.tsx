@@ -341,27 +341,18 @@ export default function TradesPage() {
 
   // Confirm delete trade
   const confirmDeleteTrade = useCallback(async (tradeId: string) => {
-    // #region agent log
-    console.log('[DEBUG-D] confirmDeleteTrade called', { tradeId });
-    // #endregion
     try {
       const response = await fetch(`/api/trades/${tradeId}`, {
         method: 'DELETE',
       })
       
       const result = await response.json()
-      // #region agent log
-      console.log('[DEBUG-C] API response received', { tradeId, status: response.status, result });
-      // #endregion
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to delete trade')
       }
       
       // Remove trade from local state immediately
-      // #region agent log
-      console.log('[DEBUG-E] Updating local state after successful delete', { tradeId });
-      // #endregion
       setDays(prevDays => {
         return prevDays.map(day => ({
           ...day,
@@ -374,9 +365,6 @@ export default function TradesPage() {
       setRefreshKey(k => k + 1)
       router.refresh()
     } catch (error) {
-      // #region agent log
-      console.log('[DEBUG-C] Error in confirmDeleteTrade', { tradeId, error: error instanceof Error ? error.message : String(error) });
-      // #endregion
       console.error('Failed to delete trade:', error)
       throw error
     }

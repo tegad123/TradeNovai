@@ -2,18 +2,6 @@
 // Securely delete a trade with ownership verification
 
 import { NextRequest, NextResponse } from "next/server"
-
-// GET handler for testing if route exists
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { tradeId: string } }
-) {
-  return NextResponse.json({ 
-    exists: true, 
-    tradeId: params.tradeId,
-    message: "Route is working" 
-  })
-}
 import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
 

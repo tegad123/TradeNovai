@@ -33,26 +33,14 @@ export function DeleteTradeDialog({
   const [error, setError] = useState<string | null>(null)
 
   const handleDelete = async () => {
-    // #region agent log
-    console.log('[DEBUG-A] handleDelete called', { trade, hasTrade: !!trade });
-    // #endregion
     if (!trade) return
     
     setIsDeleting(true)
     setError(null)
     try {
-      // #region agent log
-      console.log('[DEBUG-B] Calling onConfirm with tradeId', { tradeId: trade.id });
-      // #endregion
       await onConfirm(trade.id)
-      // #region agent log
-      console.log('[DEBUG-B] onConfirm completed successfully', { tradeId: trade.id });
-      // #endregion
       onOpenChange(false)
     } catch (err) {
-      // #region agent log
-      console.log('[DEBUG-C] onConfirm threw error', { error: err instanceof Error ? err.message : String(err) });
-      // #endregion
       console.error("Failed to delete trade:", err)
       setError(err instanceof Error ? err.message : "Failed to delete trade")
     } finally {
