@@ -1,10 +1,16 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { ChevronDown, StickyNote, Play } from "lucide-react"
+import { ChevronDown, StickyNote, Play, MoreVertical, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DayData, Trade } from "@/lib/types/trades"
 import { DayStatsRow } from "./DayStatsRow"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   AreaChart,
   Area,
@@ -20,6 +26,7 @@ interface DayAccordionProps {
   isExpanded: boolean
   onToggle: () => void
   onAddNote?: () => void
+  onDeleteTrade?: (trade: Trade) => void
   className?: string
 }
 
@@ -28,6 +35,7 @@ export function DayAccordion({
   isExpanded,
   onToggle,
   onAddNote,
+  onDeleteTrade,
   className,
 }: DayAccordionProps) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -183,11 +191,16 @@ export function DayAccordion({
                   <th className="text-right py-2 px-3 text-[var(--text-muted)] font-medium">Exit</th>
                   <th className="text-right py-2 px-3 text-[var(--text-muted)] font-medium">P&L</th>
                   <th className="text-right py-2 px-3 text-[var(--text-muted)] font-medium">Time</th>
+                  {onDeleteTrade && <th className="w-10"></th>}
                 </tr>
               </thead>
               <tbody>
                 {day.trades.map((trade) => (
-                  <TradeRow key={trade.id} trade={trade} />
+                  <TradeRow 
+                    key={trade.id} 
+                    trade={trade} 
+                    onDelete={onDeleteTrade ? () => onDeleteTrade(trade) : undefined}
+                  />
                 ))}
               </tbody>
             </table>
@@ -199,7 +212,7 @@ export function DayAccordion({
 }
 
 // Trade row component
-function TradeRow({ trade }: { trade: Trade }) {
+function TradeRow({ trade, onDelete }: { trade: Trade; onDelete?: () => void }) {
   const entryTime = new Date(trade.entryTime).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -241,6 +254,26 @@ function TradeRow({ trade }: { trade: Trade }) {
       </td>
       <td className="py-2 px-3 text-right text-[var(--text-muted)] text-xs">
         {entryTime} - {exitTime}
+      </td>
+      <td className="py-2 px-1 text-right">
+        {onDelete && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="p-1 rounded hover:bg-white/10 text-[var(--text-muted)] hover:text-white transition-colors">
+                <MoreVertical className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800">
+              <DropdownMenuItem 
+                onClick={onDelete}
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete trade
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </td>
     </tr>
   )

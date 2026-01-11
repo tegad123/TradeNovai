@@ -262,6 +262,44 @@ export async function getTradeStats(
   }
 }
 
+// Delete a single trade (with ownership verification)
+export async function deleteTrade(
+  tradeId: string,
+  userId: string,
+  accountId?: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = createClientSafe()
+  if (!supabase) {
+    return { success: false, error: "Supabase is not configured" }
+  }
+
+  // Build query with ownership check
+  let query = supabase
+    .from("trades")
+    .delete()
+    .eq("id", tradeId)
+    .eq("user_id", userId)  // Security: verify ownership
+
+  // Optionally filter by account
+  if (accountId) {
+    query = query.eq("account_id", accountId)
+  }
+
+  const { error, count } = await query.select()
+
+  if (error) {
+    console.error("Error deleting trade:", error)
+    return { success: false, error: error.message }
+  }
+
+  // RLS should handle this, but double-check
+  if (count === 0) {
+    return { success: false, error: "Trade not found or access denied" }
+  }
+
+  return { success: true }
+}
+
 // Delete all trades for a user (for testing/reset)
 export async function deleteAllTrades(userId: string): Promise<boolean> {
   const supabase = createClientSafe()

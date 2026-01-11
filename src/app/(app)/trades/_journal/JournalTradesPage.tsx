@@ -12,9 +12,11 @@ import {
   CalendarSidebar,
   DayAccordion,
 } from "@/components/trades"
+import { DeleteTradeDialog } from "@/components/trades/DeleteTradeDialog"
 import { TimeframeOption, DayData, CalendarDay, Trade, DayEquityPoint } from "@/lib/types/trades"
 import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import { createClientSafe } from "@/lib/supabase/browser"
+import { useRouter } from "next/navigation"
 
 // Helper to format date label
 function formatDayLabel(dateStr: string): string {
@@ -164,6 +166,7 @@ function processTradesIntoDays(trades: Array<{
 
 export default function TradesPage() {
   const { user } = useSupabaseAuthContext()
+  const router = useRouter()
   const [addTradesOpen, setAddTradesOpen] = useState(false)
   const [timeframe, setTimeframe] = useState<TimeframeOption>("30D")
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -174,6 +177,11 @@ export default function TradesPage() {
   const [days, setDays] = useState<DayData[]>([])
   const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([])
   const dayRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  
+  // Delete trade state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [tradeToDelete, setTradeToDelete] = useState<Trade | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Fetch trades from database
   useEffect(() => {
@@ -248,7 +256,7 @@ export default function TradesPage() {
     }
 
     fetchTrades()
-  }, [user, timeframe, accountType])
+  }, [user, timeframe, accountType, refreshKey])
 
   // Filter days based on search
   const filteredDays = useMemo(() => {
@@ -320,9 +328,47 @@ export default function TradesPage() {
 
   // Handle trade added - refresh data
   const handleTradeAdded = useCallback(() => {
-    // Reload the page to get fresh data
-    window.location.reload()
+    // Trigger a re-fetch by incrementing refresh key
+    setRefreshKey(k => k + 1)
+    router.refresh()
+  }, [router])
+
+  // Handle delete trade
+  const handleDeleteTrade = useCallback((trade: Trade) => {
+    setTradeToDelete(trade)
+    setDeleteDialogOpen(true)
   }, [])
+
+  // Confirm delete trade
+  const confirmDeleteTrade = useCallback(async (tradeId: string) => {
+    try {
+      const response = await fetch(`/api/trades/${tradeId}`, {
+        method: 'DELETE',
+      })
+      
+      const result = await response.json()
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete trade')
+      }
+      
+      // Remove trade from local state immediately
+      setDays(prevDays => {
+        return prevDays.map(day => ({
+          ...day,
+          trades: day.trades.filter(t => t.id !== tradeId),
+          totalTrades: day.trades.filter(t => t.id !== tradeId).length,
+        })).filter(day => day.trades.length > 0)  // Remove empty days
+      })
+      
+      // Refresh to update all data
+      setRefreshKey(k => k + 1)
+      router.refresh()
+    } catch (error) {
+      console.error('Failed to delete trade:', error)
+      throw error
+    }
+  }, [router])
 
   return (
     <PageContainer className="pb-8">
@@ -462,6 +508,7 @@ export default function TradesPage() {
                           isExpanded={expandedDays.has(day.date)}
                           onToggle={() => toggleDay(day.date)}
                           onAddNote={() => console.log("Add note for", day.date)}
+                          onDeleteTrade={handleDeleteTrade}
                         />
                       </div>
                     ))}
@@ -533,6 +580,14 @@ export default function TradesPage() {
         open={addTradesOpen}
         onClose={() => setAddTradesOpen(false)}
         onComplete={handleTradeAdded}
+      />
+
+      {/* Delete Trade Dialog */}
+      <DeleteTradeDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        trade={tradeToDelete}
+        onConfirm={confirmDeleteTrade}
       />
     </PageContainer>
   )

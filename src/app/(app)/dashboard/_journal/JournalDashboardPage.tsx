@@ -44,6 +44,14 @@ import { useDashboardLayout } from "@/lib/hooks/useDashboardLayout"
 import { useSupabaseAuthContext } from "@/lib/contexts/SupabaseAuthContext"
 import { createClientSafe } from "@/lib/supabase/browser"
 import { generateDemoTrades } from "@/lib/mockData"
+import {
+  calculateTradeStats,
+  calculateDailyPnl,
+  calculateEquityCurve,
+  processDbTrades,
+  buildCalendarForMonth,
+  type ClosedTrade,
+} from "@/lib/analytics/tradesAnalytics"
 
 // Types
 interface TradeData {
@@ -84,7 +92,7 @@ interface DashboardData {
   calendarData: Array<{ date: string; pnl: number | null }>
 }
 
-// Calculate dashboard data from trades
+// Calculate dashboard data from trades using unified analytics
 function calculateDashboardData(trades: TradeData[]): DashboardData {
   if (trades.length === 0) {
     return {
@@ -104,59 +112,46 @@ function calculateDashboardData(trades: TradeData[]): DashboardData {
     }
   }
 
-  // Basic stats
-  const winningTrades = trades.filter(t => t.pnl > 0)
-  const losingTrades = trades.filter(t => t.pnl <= 0)
+  // Convert TradeData to ClosedTrade format for unified analytics
+  const closedTrades: ClosedTrade[] = trades
+    .filter(t => t.exit_time)
+    .map(t => ({
+      id: t.id,
+      symbol: t.symbol || 'Unknown',
+      side: t.side?.toUpperCase() === 'SHORT' || t.side?.toUpperCase() === 'SELL' ? 'SHORT' as const : 'LONG' as const,
+      quantity: t.quantity || 0,
+      entryPrice: t.entry_price || 0,
+      exitPrice: t.exit_price || 0,
+      entryTime: t.entry_time || '',
+      exitTime: t.exit_time,
+      pnl: t.pnl || 0,
+      fees: t.fees || 0,
+      status: 'closed' as const,
+    }))
+
+  // Use unified analytics module
+  const stats = calculateTradeStats(closedTrades, 'America/Chicago')
+  const dailyPnlData = calculateDailyPnl(closedTrades, 'America/Chicago')
+  const equityCurveData = calculateEquityCurve(dailyPnlData)
+
+  // Convert daily P&L to dashboard format
+  const dailyPnL = dailyPnlData.map(d => ({ date: d.date, pnl: d.netPnl }))
   
-  const totalWins = winningTrades.reduce((sum, t) => sum + t.pnl, 0)
-  const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0))
-  
-  const netPnL = trades.reduce((sum, t) => sum + t.pnl - (t.fees || 0), 0)
-  const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? Infinity : 0
-  
-  const avgWin = winningTrades.length > 0 
-    ? totalWins / winningTrades.length 
-    : 0
-  const avgLoss = losingTrades.length > 0 
-    ? totalLosses / losingTrades.length 
-    : 0
-
-  // Group by day for daily P&L and calendar
-  const tradesByDay: Record<string, number> = {}
-  trades.forEach(trade => {
-    if (!trade.exit_time) return // Skip trades without exit_time
-    const dateKey = new Date(trade.exit_time).toISOString().split('T')[0]
-    tradesByDay[dateKey] = (tradesByDay[dateKey] || 0) + (trade.pnl || 0) - (trade.fees || 0)
-  })
-
-  const dailyPnL = Object.entries(tradesByDay)
-    .map(([date, pnl]) => ({ date, pnl: Math.round(pnl * 100) / 100 }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-
-  // Calculate winning/losing days
-  const winningDays = dailyPnL.filter(d => d.pnl > 0).length
-  const losingDays = dailyPnL.filter(d => d.pnl < 0).length
-
-  // Equity curve (cumulative P&L)
-  let cumulative = 0
-  const equityCurve = dailyPnL.map(day => {
-    cumulative += day.pnl
-    return { date: day.date, value: Math.round(cumulative * 100) / 100 }
-  })
+  // Convert equity curve to dashboard format
+  const equityCurve = equityCurveData.map(e => ({ date: e.date, value: e.equity }))
 
   // Recent trades (last 10)
-  const recentTrades = trades
-    .filter(t => t.exit_time) // Only include trades with exit_time
+  const recentTrades = closedTrades
     .slice(0, 10)
     .map(t => ({
       id: t.id,
       symbol: t.symbol,
-      side: (t.side === 'long' || t.side === 'short' ? t.side : 'long') as "long" | "short",
-      entryPrice: t.entry_price || 0,
-      exitPrice: t.exit_price,
+      side: (t.side === 'LONG' ? 'long' : 'short') as "long" | "short",
+      entryPrice: t.entryPrice || 0,
+      exitPrice: t.exitPrice,
       pnl: t.pnl || 0,
       status: 'closed' as const,
-      date: t.exit_time ? new Date(t.exit_time).toLocaleDateString('en-US', { 
+      date: t.exitTime ? new Date(t.exitTime).toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
         hour: '2-digit',
@@ -164,7 +159,12 @@ function calculateDashboardData(trades: TradeData[]): DashboardData {
       }) : '',
     }))
 
-  // Calendar data (last 30 days)
+  // Calendar data - build from daily P&L
+  const dailyPnlMap: Record<string, number> = {}
+  for (const day of dailyPnlData) {
+    dailyPnlMap[day.date] = day.netPnl
+  }
+  
   const calendarData: Array<{ date: string; pnl: number | null }> = []
   const today = new Date()
   for (let i = 29; i >= 0; i--) {
@@ -173,20 +173,20 @@ function calculateDashboardData(trades: TradeData[]): DashboardData {
     const dateKey = date.toISOString().split('T')[0]
     calendarData.push({
       date: dateKey,
-      pnl: tradesByDay[dateKey] ?? null
+      pnl: dailyPnlMap[dateKey] ?? null
     })
   }
 
   return {
-    netPnL: Math.round(netPnL * 100) / 100,
-    totalTrades: trades.length,
-    winningTrades: winningTrades.length,
-    losingTrades: losingTrades.length,
-    profitFactor: isFinite(profitFactor) ? Math.round(profitFactor * 100) / 100 : 0,
-    avgWin: Math.round(avgWin * 100) / 100,
-    avgLoss: Math.round(avgLoss * 100) / 100,
-    winningDays,
-    losingDays,
+    netPnL: stats.netPnl,
+    totalTrades: stats.totalTrades,
+    winningTrades: stats.winningTrades,
+    losingTrades: stats.losingTrades,
+    profitFactor: stats.profitFactor,
+    avgWin: stats.avgWin,
+    avgLoss: stats.avgLoss,
+    winningDays: stats.winningDays,
+    losingDays: stats.losingDays,
     dailyPnL,
     equityCurve,
     recentTrades,
