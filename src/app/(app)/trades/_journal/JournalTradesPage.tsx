@@ -278,11 +278,21 @@ export default function TradesPage() {
 
   // Expand all days
   const expandAll = useCallback(() => {
-    setExpandedDays(new Set(filteredDays.map((d) => d.date)))
+    // #region agent log
+    console.log('[DEBUG-A] expandAll called', { filteredDaysCount: filteredDays.length, dates: filteredDays.map(d => d.date) });
+    // #endregion
+    const newSet = new Set(filteredDays.map((d) => d.date))
+    // #region agent log
+    console.log('[DEBUG-B] Setting expandedDays', { newSetSize: newSet.size });
+    // #endregion
+    setExpandedDays(newSet)
   }, [filteredDays])
 
   // Collapse all days
   const collapseAll = useCallback(() => {
+    // #region agent log
+    console.log('[DEBUG-A] collapseAll called');
+    // #endregion
     setExpandedDays(new Set())
   }, [])
 
