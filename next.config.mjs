@@ -24,14 +24,8 @@ const nextConfig = {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "https://api.openai.com/:path*",
-      },
-    ];
-  },
+  // Removed problematic rewrite that was redirecting ALL /api/* to OpenAI
+  // The app has its own API routes that need to work locally
 };
 
 export default nextConfig;
