@@ -269,12 +269,14 @@ export default function TradesPage() {
     )
   }, [days, searchQuery])
 
-  // Initialize with first day expanded
+  // Initialize with first day expanded (only on first load, not after collapseAll)
+  const hasInitializedRef = useRef(false)
   useEffect(() => {
-    if (filteredDays.length > 0 && expandedDays.size === 0) {
+    if (filteredDays.length > 0 && !hasInitializedRef.current) {
       setExpandedDays(new Set([filteredDays[0].date]))
+      hasInitializedRef.current = true
     }
-  }, [filteredDays, expandedDays.size])
+  }, [filteredDays])
 
   // Expand all days
   const expandAll = useCallback(() => {
