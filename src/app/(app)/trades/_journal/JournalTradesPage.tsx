@@ -341,18 +341,27 @@ export default function TradesPage() {
 
   // Confirm delete trade
   const confirmDeleteTrade = useCallback(async (tradeId: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:entry',message:'confirmDeleteTrade called',data:{tradeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     try {
       const response = await fetch(`/api/trades/${tradeId}`, {
         method: 'DELETE',
       })
       
       const result = await response.json()
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:apiResponse',message:'API response received',data:{tradeId,status:response.status,result},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to delete trade')
       }
       
       // Remove trade from local state immediately
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:stateUpdate',message:'Updating local state after successful delete',data:{tradeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
       setDays(prevDays => {
         return prevDays.map(day => ({
           ...day,
@@ -365,6 +374,9 @@ export default function TradesPage() {
       setRefreshKey(k => k + 1)
       router.refresh()
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:error',message:'Error in confirmDeleteTrade',data:{tradeId,error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       console.error('Failed to delete trade:', error)
       throw error
     }

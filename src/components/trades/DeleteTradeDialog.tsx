@@ -33,14 +33,26 @@ export function DeleteTradeDialog({
   const [error, setError] = useState<string | null>(null)
 
   const handleDelete = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:handleDelete',message:'handleDelete called',data:{trade,hasTrade:!!trade},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     if (!trade) return
     
     setIsDeleting(true)
     setError(null)
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:beforeOnConfirm',message:'Calling onConfirm with tradeId',data:{tradeId:trade.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       await onConfirm(trade.id)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:afterOnConfirm',message:'onConfirm completed successfully',data:{tradeId:trade.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       onOpenChange(false)
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:catchError',message:'onConfirm threw error',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       console.error("Failed to delete trade:", err)
       setError(err instanceof Error ? err.message : "Failed to delete trade")
     } finally {
