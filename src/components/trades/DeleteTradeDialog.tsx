@@ -34,7 +34,7 @@ export function DeleteTradeDialog({
 
   const handleDelete = async () => {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:handleDelete',message:'handleDelete called',data:{trade,hasTrade:!!trade},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    console.log('[DEBUG-A] handleDelete called', { trade, hasTrade: !!trade });
     // #endregion
     if (!trade) return
     
@@ -42,16 +42,16 @@ export function DeleteTradeDialog({
     setError(null)
     try {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:beforeOnConfirm',message:'Calling onConfirm with tradeId',data:{tradeId:trade.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      console.log('[DEBUG-B] Calling onConfirm with tradeId', { tradeId: trade.id });
       // #endregion
       await onConfirm(trade.id)
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:afterOnConfirm',message:'onConfirm completed successfully',data:{tradeId:trade.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      console.log('[DEBUG-B] onConfirm completed successfully', { tradeId: trade.id });
       // #endregion
       onOpenChange(false)
     } catch (err) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeleteTradeDialog.tsx:catchError',message:'onConfirm threw error',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      console.log('[DEBUG-C] onConfirm threw error', { error: err instanceof Error ? err.message : String(err) });
       // #endregion
       console.error("Failed to delete trade:", err)
       setError(err instanceof Error ? err.message : "Failed to delete trade")

@@ -342,7 +342,7 @@ export default function TradesPage() {
   // Confirm delete trade
   const confirmDeleteTrade = useCallback(async (tradeId: string) => {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:entry',message:'confirmDeleteTrade called',data:{tradeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    console.log('[DEBUG-D] confirmDeleteTrade called', { tradeId });
     // #endregion
     try {
       const response = await fetch(`/api/trades/${tradeId}`, {
@@ -351,7 +351,7 @@ export default function TradesPage() {
       
       const result = await response.json()
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:apiResponse',message:'API response received',data:{tradeId,status:response.status,result},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      console.log('[DEBUG-C] API response received', { tradeId, status: response.status, result });
       // #endregion
       
       if (!result.success) {
@@ -360,7 +360,7 @@ export default function TradesPage() {
       
       // Remove trade from local state immediately
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:stateUpdate',message:'Updating local state after successful delete',data:{tradeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+      console.log('[DEBUG-E] Updating local state after successful delete', { tradeId });
       // #endregion
       setDays(prevDays => {
         return prevDays.map(day => ({
@@ -375,7 +375,7 @@ export default function TradesPage() {
       router.refresh()
     } catch (error) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalTradesPage.tsx:confirmDeleteTrade:error',message:'Error in confirmDeleteTrade',data:{tradeId,error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      console.log('[DEBUG-C] Error in confirmDeleteTrade', { tradeId, error: error instanceof Error ? error.message : String(error) });
       // #endregion
       console.error('Failed to delete trade:', error)
       throw error
