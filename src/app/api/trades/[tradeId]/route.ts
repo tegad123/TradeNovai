@@ -65,11 +65,44 @@ export async function DELETE(
       )
     }
 
+    console.log(`[Delete Trade] Attempting to delete trade ${tradeId} for user ${user.id}`)
+
+    // First, verify the trade exists and belongs to the user
+    const { data: existingTrade, error: fetchError } = await supabase
+      .from("trades")
+      .select("id, user_id, symbol")
+      .eq("id", tradeId)
+      .single()
+
+    if (fetchError) {
+      console.error("[Delete Trade] Error fetching trade:", fetchError)
+      return NextResponse.json(
+        { success: false, error: `Trade not found: ${fetchError.message}` },
+        { status: 404 }
+      )
+    }
+
+    if (!existingTrade) {
+      return NextResponse.json(
+        { success: false, error: "Trade not found" },
+        { status: 404 }
+      )
+    }
+
+    if (existingTrade.user_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: "You don't have permission to delete this trade" },
+        { status: 403 }
+      )
+    }
+
+    console.log(`[Delete Trade] Found trade: ${existingTrade.symbol}, proceeding with delete`)
+
     // Parse optional accountId from query params
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get("accountId")
 
-    // Build delete query with ownership check (RLS also enforces this)
+    // Build delete query
     let query = supabase
       .from("trades")
       .delete()
@@ -80,15 +113,17 @@ export async function DELETE(
       query = query.eq("account_id", accountId)
     }
 
-    const { error, count } = await query
+    const { error } = await query
 
     if (error) {
-      console.error("Error deleting trade:", error)
+      console.error("[Delete Trade] Error deleting trade:", error)
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 500 }
       )
     }
+
+    console.log(`[Delete Trade] Successfully deleted trade ${tradeId}`)
 
     // Also delete any linked executions (if they exist)
     await supabase
@@ -98,7 +133,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      deleted: count ?? 1,
+      deleted: 1,
     })
   } catch (error) {
     console.error("Delete trade error:", error)

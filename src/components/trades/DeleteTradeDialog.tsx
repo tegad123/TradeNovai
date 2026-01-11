@@ -30,16 +30,19 @@ export function DeleteTradeDialog({
   onConfirm,
 }: DeleteTradeDialogProps) {
   const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleDelete = async () => {
     if (!trade) return
     
     setIsDeleting(true)
+    setError(null)
     try {
       await onConfirm(trade.id)
       onOpenChange(false)
-    } catch (error) {
-      console.error("Failed to delete trade:", error)
+    } catch (err) {
+      console.error("Failed to delete trade:", err)
+      setError(err instanceof Error ? err.message : "Failed to delete trade")
     } finally {
       setIsDeleting(false)
     }
@@ -61,6 +64,11 @@ export function DeleteTradeDialog({
                 <span className={trade.pnl >= 0 ? "text-emerald-400" : "text-red-400"}>
                   {trade.pnl >= 0 ? "+" : ""}${trade.pnl.toFixed(2)}
                 </span>
+              </span>
+            )}
+            {error && (
+              <span className="block mt-3 p-2 rounded bg-red-500/20 text-red-400 text-sm">
+                Error: {error}
               </span>
             )}
           </DialogDescription>
