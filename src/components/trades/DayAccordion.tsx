@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
 import { ChevronDown, StickyNote, Play, MoreVertical, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DayData, Trade } from "@/lib/types/trades"
@@ -38,14 +37,9 @@ export function DayAccordion({
   onDeleteTrade,
   className,
 }: DayAccordionProps) {
-  const contentRef = useRef<HTMLDivElement>(null)
-  const [contentHeight, setContentHeight] = useState(0)
-
-  useEffect(() => {
-    if (contentRef.current) {
-      setContentHeight(contentRef.current.scrollHeight)
-    }
-  }, [isExpanded, day])
+  // #region agent log
+  console.log('[DEBUG-D] DayAccordion render', { date: day.date, isExpanded });
+  // #endregion
 
   return (
     <div className={cn("glass-card overflow-hidden", className)}>
@@ -103,12 +97,15 @@ export function DayAccordion({
         </div>
       </button>
 
-      {/* Expandable content */}
+      {/* Expandable content - using CSS grid for smooth animation */}
       <div
-        style={{ height: isExpanded ? contentHeight : 0 }}
-        className="overflow-hidden transition-all duration-300 ease-in-out"
+        className={cn(
+          "grid transition-all duration-300 ease-in-out",
+          isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
       >
-        <div ref={contentRef} className="px-4 pb-4 space-y-4">
+        <div className="overflow-hidden">
+          <div className="px-4 pb-4 space-y-4">
           {/* Divider */}
           <div className="border-t border-white/10" />
           
@@ -204,6 +201,7 @@ export function DayAccordion({
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       </div>
