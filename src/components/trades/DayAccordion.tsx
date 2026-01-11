@@ -97,15 +97,14 @@ export function DayAccordion({
         </div>
       </button>
 
-      {/* Expandable content - using CSS grid for smooth animation */}
+      {/* Expandable content */}
       <div
         className={cn(
-          "grid transition-all duration-300 ease-in-out",
-          isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          "overflow-hidden transition-all duration-300 ease-in-out",
+          isExpanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
         )}
       >
-        <div className="overflow-hidden">
-          <div className="px-4 pb-4 space-y-4">
+        <div className="px-4 pb-4 space-y-4">
           {/* Divider */}
           <div className="border-t border-white/10" />
           
@@ -201,7 +200,6 @@ export function DayAccordion({
                 ))}
               </tbody>
             </table>
-          </div>
           </div>
         </div>
       </div>
