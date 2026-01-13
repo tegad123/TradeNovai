@@ -265,6 +265,13 @@ async function importTradovateFormat(
     }
   }
 
+  // #region agent log - debug info
+  const closedTradesForDebug = tradesToSave.filter(t => t.status === 'closed')
+  const debugTotalPnl = closedTradesForDebug.reduce((sum, t) => sum + (t.pnl || 0), 0)
+  const debugWins = closedTradesForDebug.filter(t => (t.pnl || 0) > 0).length
+  const debugLosses = closedTradesForDebug.filter(t => (t.pnl || 0) < 0).length
+  // #endregion
+  
   const result = {
     success: true,
     executionsImported: executionsSaved,
@@ -272,6 +279,21 @@ async function importTradovateFormat(
     tradesUpdated,
     skippedRows: skipped + execDuplicates + tradeDuplicates,
     errors,
+    // Debug info for troubleshooting
+    debug: {
+      derivedTradeCount: derivedTrades.length,
+      totalPnlDollars: debugTotalPnl,
+      wins: debugWins,
+      losses: debugLosses,
+      openPositions: openPositions.length,
+      first3Trades: closedTradesForDebug.slice(0, 3).map(t => ({
+        symbol: t.symbol,
+        pnl: t.pnl,
+        pnlPoints: t.pnlPoints,
+        qty: t.quantity,
+        side: t.side
+      }))
+    }
   }
   console.log("[Import] Final result:", result)
   return result
