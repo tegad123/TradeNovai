@@ -216,21 +216,6 @@ async function importTradovateFormat(
 
   // Save trades using the authenticated server client
   const allTrades = [...tradesToSave, ...openTradesToSave]
-  console.log("[Import] Saving", allTrades.length, "trades to database...")
-  // #region agent log
-  const closedForLog = tradesToSave.filter(t => t.status === 'closed')
-  const totalPnlToSave = closedForLog.reduce((sum, t) => sum + (t.pnl || 0), 0)
-  console.log("[Import] Closed trades P&L summary:", {
-    count: closedForLog.length,
-    totalPnl: totalPnlToSave.toFixed(2),
-    first3: closedForLog.slice(0, 3).map(t => ({
-      symbol: t.symbol,
-      pnl: t.pnl,
-      pnlPoints: t.pnlPoints,
-      qty: t.quantity
-    }))
-  })
-  // #endregion
   
   const { created: tradesCreated, updated: tradesUpdated, duplicates: tradeDuplicates } = 
     allTrades.length > 0 ? await saveTrades(allTrades, supabase) : { created: 0, updated: 0, duplicates: 0 }
@@ -265,13 +250,6 @@ async function importTradovateFormat(
     }
   }
 
-  // #region agent log - debug info
-  const closedTradesForDebug = tradesToSave.filter(t => t.status === 'closed')
-  const debugTotalPnl = closedTradesForDebug.reduce((sum, t) => sum + (t.pnl || 0), 0)
-  const debugWins = closedTradesForDebug.filter(t => (t.pnl || 0) > 0).length
-  const debugLosses = closedTradesForDebug.filter(t => (t.pnl || 0) < 0).length
-  // #endregion
-  
   const result = {
     success: true,
     executionsImported: executionsSaved,
@@ -279,23 +257,7 @@ async function importTradovateFormat(
     tradesUpdated,
     skippedRows: skipped + execDuplicates + tradeDuplicates,
     errors,
-    // Debug info for troubleshooting
-    debug: {
-      derivedTradeCount: derivedTrades.length,
-      totalPnlDollars: debugTotalPnl,
-      wins: debugWins,
-      losses: debugLosses,
-      openPositions: openPositions.length,
-      first3Trades: closedTradesForDebug.slice(0, 3).map(t => ({
-        symbol: t.symbol,
-        pnl: t.pnl,
-        pnlPoints: t.pnlPoints,
-        qty: t.quantity,
-        side: t.side
-      }))
-    }
   }
-  console.log("[Import] Final result:", result)
   return result
 }
 
