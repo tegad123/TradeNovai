@@ -2259,7 +2259,8 @@ export async function getModuleRequiredAssignments(moduleId: string): Promise<st
   return data.map(d => d.assignment_id)
 }
 
-// Check if an assignment is completed (graded) by a user
+// Check if an assignment is completed (submitted) by a user
+// Note: Changed from 'graded' to 'submitted' - modules unlock immediately upon submission
 export async function isAssignmentCompleted(assignmentId: string, userId: string): Promise<boolean> {
   const supabase = getClient()
   if (!supabase) return false
@@ -2269,7 +2270,7 @@ export async function isAssignmentCompleted(assignmentId: string, userId: string
     .select('id, status')
     .eq('assignment_id', assignmentId)
     .eq('student_id', userId)
-    .eq('status', 'graded')
+    .in('status', ['submitted', 'graded']) // Accept both submitted and graded
     .single()
 
   if (error || !data) return false

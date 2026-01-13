@@ -300,11 +300,6 @@ export default function DashboardPage() {
   const [accountMode, setAccountMode] = useState<'live' | 'demo'>('demo')
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   
-  // Delete all trades state
-  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
-  const [deletingAll, setDeletingAll] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
-  
   const { 
     layout, 
     loading: layoutLoading, 
