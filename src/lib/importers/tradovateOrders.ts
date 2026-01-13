@@ -296,6 +296,8 @@ interface PartialClose {
 export function deriveTradesFromExecutions(
   executions: ParsedExecution[]
 ): { trades: DerivedTrade[]; openPositions: OpenLot[] } {
+  console.log('[FIFO] Starting with', executions.length, 'executions')
+  
   // Sort executions by time
   const sorted = [...executions].sort(
     (a, b) => a.executedAt.getTime() - b.executedAt.getTime()
@@ -435,6 +437,21 @@ export function deriveTradesFromExecutions(
     allTrades.push(...roundTripTrades)
     allOpenPositions.push(...openLots.map(lot => ({ ...lot, symbol })))
   })
+
+  // Log summary
+  const totalPnl = allTrades.reduce((sum, t) => sum + t.pnlDollars, 0)
+  const wins = allTrades.filter(t => t.pnlDollars > 0).length
+  const losses = allTrades.filter(t => t.pnlDollars < 0).length
+  console.log('[FIFO] Result:', allTrades.length, 'round-trip trades,', allOpenPositions.length, 'open positions')
+  console.log('[FIFO] Wins:', wins, 'Losses:', losses, 'Total P&L: $' + totalPnl.toFixed(2))
+  console.log('[FIFO] First 3 trades:', allTrades.slice(0, 3).map(t => ({
+    symbol: t.symbol,
+    qty: t.quantity,
+    pnlPoints: t.pnlPoints,
+    pnlDollars: t.pnlDollars,
+    entry: t.entryPrice,
+    exit: t.exitPrice
+  })))
 
   return { trades: allTrades, openPositions: allOpenPositions }
 }
