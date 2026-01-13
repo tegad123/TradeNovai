@@ -221,7 +221,40 @@ export function parseTradovateOrdersCSV(
 }
 
 /**
+ * Get point value for a symbol (dollar value per 1.0 price move per contract)
+ * MGC (E-Micro Gold): tickSize=0.1, tickValue=$1, so pointValue = $10
+ */
+function getPointValue(symbol: string): number {
+  const upperSymbol = symbol.toUpperCase()
+  
+  // E-Micro Gold futures
+  if (upperSymbol.includes('MGC')) return 10
+  
+  // E-Mini S&P 500
+  if (upperSymbol.includes('ES') || upperSymbol.includes('MES')) return 50
+  
+  // E-Mini Nasdaq
+  if (upperSymbol.includes('NQ') || upperSymbol.includes('MNQ')) return 20
+  
+  // Micro E-Mini Nasdaq
+  if (upperSymbol.includes('MNQ')) return 2
+  
+  // E-Mini Russell
+  if (upperSymbol.includes('RTY') || upperSymbol.includes('M2K')) return 50
+  
+  // Gold futures (GC)
+  if (upperSymbol.includes('GC') && !upperSymbol.includes('MGC')) return 100
+  
+  // Crude Oil (CL)
+  if (upperSymbol.includes('CL') || upperSymbol.includes('MCL')) return 1000
+  
+  // Default to 1 (raw price difference)
+  return 1
+}
+
+/**
  * Derive closed trades from executions using FIFO matching
+ * Aggregates individual closes into round-trips (flat → position → flat)
  */
 export interface DerivedTrade {
   symbol: string
@@ -234,6 +267,7 @@ export interface DerivedTrade {
   entryTime: Date
   exitTime: Date
   pnlPoints: number
+  pnlDollars: number
   openExecutionId: string
   closeExecutionId: string
   currency: string
@@ -245,6 +279,18 @@ interface OpenLot {
   price: number
   time: Date
   executionId: string
+}
+
+// Represents a partial close within a round-trip
+interface PartialClose {
+  entryPrice: number
+  exitPrice: number
+  quantity: number
+  entryTime: Date
+  exitTime: Date
+  pnlPoints: number
+  openExecutionId: string
+  closeExecutionId: string
 }
 
 export function deriveTradesFromExecutions(
@@ -268,8 +314,16 @@ export function deriveTradesFromExecutions(
 
   // Process each symbol
   bySymbol.forEach((symbolExecutions, symbol) => {
+    const pointValue = getPointValue(symbol)
     const openLots: OpenLot[] = []
-    const trades: DerivedTrade[] = []
+    const roundTripTrades: DerivedTrade[] = []
+    
+    // Track partial closes for current round-trip
+    let currentRoundTrip: PartialClose[] = []
+    let roundTripSide: "LONG" | "SHORT" | null = null
+    let roundTripProduct = ""
+    let roundTripDescription = ""
+    let roundTripCurrency = "USD"
 
     for (const exec of symbolExecutions) {
       let remainingQty = exec.quantity
@@ -283,27 +337,30 @@ export function deriveTradesFromExecutions(
           const openLot = openLots[0]
           const closeQty = Math.min(remainingQty, openLot.quantity)
 
-          // Calculate P&L
+          // Calculate P&L in points
           const isLong = openLot.side === "BUY"
           const pnlPoints = isLong
             ? (exec.price - openLot.price) * closeQty
             : (openLot.price - exec.price) * closeQty
 
-          trades.push({
-            symbol,
-            product: exec.product,
-            description: exec.description,
-            side: isLong ? "LONG" : "SHORT",
-            quantity: closeQty,
+          // Add to current round-trip
+          currentRoundTrip.push({
             entryPrice: openLot.price,
             exitPrice: exec.price,
+            quantity: closeQty,
             entryTime: openLot.time,
             exitTime: exec.executedAt,
             pnlPoints,
             openExecutionId: openLot.executionId,
             closeExecutionId: exec.externalId,
-            currency: exec.currency,
           })
+          
+          if (!roundTripSide) {
+            roundTripSide = isLong ? "LONG" : "SHORT"
+            roundTripProduct = exec.product
+            roundTripDescription = exec.description
+            roundTripCurrency = exec.currency
+          }
 
           // Update quantities
           remainingQty -= closeQty
@@ -313,6 +370,53 @@ export function deriveTradesFromExecutions(
           if (openLot.quantity <= 0) {
             openLots.shift()
           }
+        }
+        
+        // If position is now flat, complete the round-trip
+        if (openLots.length === 0 && currentRoundTrip.length > 0) {
+          // Aggregate the round-trip into a single trade
+          const totalQty = currentRoundTrip.reduce((sum, c) => sum + c.quantity, 0)
+          const totalPnlPoints = currentRoundTrip.reduce((sum, c) => sum + c.pnlPoints, 0)
+          const totalPnlDollars = totalPnlPoints * pointValue
+          
+          // Weighted average prices
+          const weightedEntryPrice = currentRoundTrip.reduce(
+            (sum, c) => sum + c.entryPrice * c.quantity, 0
+          ) / totalQty
+          const weightedExitPrice = currentRoundTrip.reduce(
+            (sum, c) => sum + c.exitPrice * c.quantity, 0
+          ) / totalQty
+          
+          // First entry time, last exit time
+          const entryTime = currentRoundTrip.reduce(
+            (earliest, c) => c.entryTime < earliest ? c.entryTime : earliest,
+            currentRoundTrip[0].entryTime
+          )
+          const exitTime = currentRoundTrip.reduce(
+            (latest, c) => c.exitTime > latest ? c.exitTime : latest,
+            currentRoundTrip[0].exitTime
+          )
+          
+          roundTripTrades.push({
+            symbol,
+            product: roundTripProduct,
+            description: roundTripDescription,
+            side: roundTripSide!,
+            quantity: totalQty,
+            entryPrice: Math.round(weightedEntryPrice * 100) / 100,
+            exitPrice: Math.round(weightedExitPrice * 100) / 100,
+            entryTime,
+            exitTime,
+            pnlPoints: Math.round(totalPnlPoints * 100) / 100,
+            pnlDollars: Math.round(totalPnlDollars * 100) / 100,
+            openExecutionId: currentRoundTrip[0].openExecutionId,
+            closeExecutionId: currentRoundTrip[currentRoundTrip.length - 1].closeExecutionId,
+            currency: roundTripCurrency,
+          })
+          
+          // Reset for next round-trip
+          currentRoundTrip = []
+          roundTripSide = null
         }
       }
 
@@ -328,7 +432,7 @@ export function deriveTradesFromExecutions(
       }
     }
 
-    allTrades.push(...trades)
+    allTrades.push(...roundTripTrades)
     allOpenPositions.push(...openLots.map(lot => ({ ...lot, symbol })))
   })
 
