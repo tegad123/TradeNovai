@@ -104,17 +104,7 @@ export function StepFileUpload({ broker, onComplete, onCancel }: StepFileUploadP
         body: formData,
       })
       
-      const result: ImportResult & { error?: string; debug?: any } = await response.json()
-      
-      // #region agent log
-      console.log("[IMPORT RESULT]", JSON.stringify(result, null, 2))
-      if (result.debug) {
-        console.log("[IMPORT DEBUG] Derived trades:", result.debug.derivedTradeCount)
-        console.log("[IMPORT DEBUG] Total P&L:", result.debug.totalPnlDollars)
-        console.log("[IMPORT DEBUG] Wins:", result.debug.wins, "Losses:", result.debug.losses)
-        console.log("[IMPORT DEBUG] First 3 trades:", result.debug.first3Trades)
-      }
-      // #endregion
+      const result: ImportResult & { error?: string } = await response.json()
       
       if (result.success) {
         const tradesCount = result.tradesCreated + result.tradesUpdated

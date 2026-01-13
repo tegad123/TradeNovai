@@ -300,6 +300,11 @@ export default function DashboardPage() {
   const [accountMode, setAccountMode] = useState<'live' | 'demo'>('demo')
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   
+  // Delete all trades state
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  
   const { 
     layout, 
     loading: layoutLoading, 
@@ -369,20 +374,7 @@ export default function DashboardPage() {
       if (error) {
         console.error('Error fetching trades:', error)
       } else {
-        // #region agent log
-        const fetchedTrades = data || []
-        const totalPnl = fetchedTrades.reduce((sum: number, t: TradeData) => sum + (t.pnl || 0), 0)
-        console.log('[DASHBOARD] Fetched trades:', fetchedTrades.length, 'Total P&L:', totalPnl.toFixed(2))
-        console.log('[DASHBOARD] First 3 trades:', fetchedTrades.slice(0, 3).map(t => ({
-          id: t.id,
-          symbol: t.symbol,
-          pnl: t.pnl,
-          qty: t.quantity,
-          exit_time: t.exit_time
-        })))
-        fetch('http://127.0.0.1:7244/ingest/f9d36528-bdb9-4b04-b221-059ba99f96fb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'JournalDashboardPage.tsx:fetchTrades',message:'Fetched trades from DB',data:{count:fetchedTrades.length,totalPnl,first3:fetchedTrades.slice(0,3).map((t: TradeData)=>({id:t.id,pnl:t.pnl,symbol:t.symbol,qty:t.quantity}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-        setTrades(fetchedTrades)
+        setTrades(data || [])
       }
 
       setLoading(false)

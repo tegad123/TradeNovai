@@ -38,7 +38,7 @@ function formatDayLabel(dateStr: string): string {
 }
 
 // Get date range based on timeframe
-function getDateRange(timeframe: TimeframeOption): { start: Date; end: Date } {
+function getDateRange(timeframe: TimeframeOption): { start: Date; end: Date } | null {
   const end = new Date()
   end.setHours(23, 59, 59, 999)
   
@@ -55,6 +55,11 @@ function getDateRange(timeframe: TimeframeOption): { start: Date; end: Date } {
     case "30D":
       start.setDate(start.getDate() - 30)
       break
+    case "90D":
+      start.setDate(start.getDate() - 90)
+      break
+    case "allTime":
+      return null // No date filter - get all trades
     case "thisMonth":
       start.setDate(1)
       break
@@ -214,7 +219,7 @@ export default function TradesPage() {
 
       setLoading(true)
 
-      const { start, end } = getDateRange(timeframe)
+      const dateRange = getDateRange(timeframe)
 
       // Fetch trades for the selected timeframe
       // For now, we treat "live" as real data and "demo" as no data
@@ -226,14 +231,20 @@ export default function TradesPage() {
         return
       }
 
-      const { data: trades, error } = await supabase
+      // Build query - apply date filter only if not "allTime"
+      let query = supabase
         .from('trades')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'closed')
-        .gte('exit_time', start.toISOString())
-        .lte('exit_time', end.toISOString())
-        .order('exit_time', { ascending: false })
+      
+      if (dateRange) {
+        query = query
+          .gte('exit_time', dateRange.start.toISOString())
+          .lte('exit_time', dateRange.end.toISOString())
+      }
+      
+      const { data: trades, error } = await query.order('exit_time', { ascending: false })
 
       if (error) {
         console.error('Error fetching trades:', error)

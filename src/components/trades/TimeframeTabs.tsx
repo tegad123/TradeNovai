@@ -13,8 +13,9 @@ const timeframes: { value: TimeframeOption; label: string }[] = [
   { value: "7D", label: "7D" },
   { value: "14D", label: "14D" },
   { value: "30D", label: "30D" },
+  { value: "90D", label: "90D" },
+  { value: "allTime", label: "All" },
   { value: "thisMonth", label: "This Month" },
-  { value: "custom", label: "Custom" },
 ]
 
 export function TimeframeTabs({ value, onChange, className }: TimeframeTabsProps) {

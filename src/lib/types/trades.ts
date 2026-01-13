@@ -52,7 +52,7 @@ export interface DayViewData {
   }
 }
 
-export type TimeframeOption = "7D" | "14D" | "30D" | "thisMonth" | "custom"
+export type TimeframeOption = "7D" | "14D" | "30D" | "90D" | "allTime" | "thisMonth" | "custom"
 
 export interface TradesFilter {
   accountId?: string
