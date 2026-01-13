@@ -1,12 +1,20 @@
 "use client"
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react"
-import { Plus, Filter, ChevronDown, ChevronUp, Search } from "lucide-react"
+import { Plus, Filter, ChevronDown, ChevronUp, Search, AlertTriangle, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PageContainer } from "@/components/layout/PageContainer"
 import { GlassCard } from "@/components/glass/GlassCard"
 import { Button } from "@/components/ui/button"
 import { AddTradesWizard } from "@/components/add-trades"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   TimeframeTabs,
   CalendarSidebar,
@@ -182,14 +190,15 @@ export default function TradesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [tradeToDelete, setTradeToDelete] = useState<Trade | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  
+  // Delete all trades for day state
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
+  const [dayToDeleteAll, setDayToDeleteAll] = useState<DayData | null>(null)
+  const [deletingAll, setDeletingAll] = useState(false)
 
   // Fetch trades from database
   useEffect(() => {
     async function fetchTrades() {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trades:fetchTrades:entry',message:'fetchTrades called',data:{hasUser:!!user,userId:user?.id?.slice(-6),accountType,timeframe},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-      // #endregion
-
       if (!user) {
         setLoading(false)
         setDays([])
@@ -198,9 +207,6 @@ export default function TradesPage() {
       }
 
       const supabase = createClientSafe()
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trades:fetchTrades:supabase',message:'Supabase client check',data:{hasSupabase:!!supabase},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
       if (!supabase) {
         setLoading(false)
         return
@@ -220,10 +226,6 @@ export default function TradesPage() {
         return
       }
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trades:fetchTrades:beforeQuery',message:'About to query trades',data:{userId:user.id.slice(-6),startDate:start.toISOString().split('T')[0],endDate:end.toISOString().split('T')[0]},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H3,H4'})}).catch(()=>{});
-      // #endregion
-
       const { data: trades, error } = await supabase
         .from('trades')
         .select('*')
@@ -232,10 +234,6 @@ export default function TradesPage() {
         .gte('exit_time', start.toISOString())
         .lte('exit_time', end.toISOString())
         .order('exit_time', { ascending: false })
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1603b341-3958-42a0-b77e-ccce80da52ed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'trades:fetchTrades:afterQuery',message:'Query result',data:{hasError:!!error,errorMessage:error?.message,tradesCount:trades?.length||0,firstTradeId:trades?.[0]?.id?.slice(-6),firstTradeStatus:trades?.[0]?.status,firstTradeExitTime:trades?.[0]?.exit_time},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2,H3,H4'})}).catch(()=>{});
-      // #endregion
 
       if (error) {
         console.error('Error fetching trades:', error)
@@ -280,21 +278,11 @@ export default function TradesPage() {
 
   // Expand all days
   const expandAll = useCallback(() => {
-    // #region agent log
-    console.log('[DEBUG-A] expandAll called', { filteredDaysCount: filteredDays.length, dates: filteredDays.map(d => d.date) });
-    // #endregion
-    const newSet = new Set(filteredDays.map((d) => d.date))
-    // #region agent log
-    console.log('[DEBUG-B] Setting expandedDays', { newSetSize: newSet.size });
-    // #endregion
-    setExpandedDays(newSet)
+    setExpandedDays(new Set(filteredDays.map((d) => d.date)))
   }, [filteredDays])
 
   // Collapse all days
   const collapseAll = useCallback(() => {
-    // #region agent log
-    console.log('[DEBUG-A] collapseAll called');
-    // #endregion
     setExpandedDays(new Set())
   }, [])
 
@@ -350,6 +338,43 @@ export default function TradesPage() {
     setTradeToDelete(trade)
     setDeleteDialogOpen(true)
   }, [])
+
+  // Handle delete all trades for a day
+  const handleDeleteAllTrades = useCallback((day: DayData) => {
+    setDayToDeleteAll(day)
+    setDeleteAllDialogOpen(true)
+  }, [])
+
+  // Confirm delete all trades for a day
+  const confirmDeleteAllTrades = useCallback(async () => {
+    if (!dayToDeleteAll) return
+    
+    setDeletingAll(true)
+    try {
+      // Delete each trade in the day
+      const deletePromises = dayToDeleteAll.trades.map(trade => 
+        fetch(`/api/trades/${trade.id}`, { method: 'DELETE' })
+      )
+      
+      await Promise.all(deletePromises)
+      
+      // Remove day from local state immediately
+      setDays(prevDays => prevDays.filter(d => d.date !== dayToDeleteAll.date))
+      setCalendarDays(prevCalendar => prevCalendar.filter(c => c.date !== dayToDeleteAll.date))
+      
+      // Close dialog
+      setDeleteAllDialogOpen(false)
+      setDayToDeleteAll(null)
+      
+      // Refresh to update all data
+      setRefreshKey(k => k + 1)
+      router.refresh()
+    } catch (error) {
+      console.error('Failed to delete trades:', error)
+    } finally {
+      setDeletingAll(false)
+    }
+  }, [dayToDeleteAll, router])
 
   // Confirm delete trade
   const confirmDeleteTrade = useCallback(async (tradeId: string) => {
@@ -521,6 +546,7 @@ export default function TradesPage() {
                           onToggle={() => toggleDay(day.date)}
                           onAddNote={() => console.log("Add note for", day.date)}
                           onDeleteTrade={handleDeleteTrade}
+                          onDeleteAllTrades={handleDeleteAllTrades}
                         />
                       </div>
                     ))}
@@ -601,6 +627,54 @@ export default function TradesPage() {
         trade={tradeToDelete}
         onConfirm={confirmDeleteTrade}
       />
+
+      {/* Delete All Trades Dialog */}
+      <Dialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
+        <DialogContent className="sm:max-w-[425px] bg-zinc-900 border-zinc-800">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Delete all trades for this day?
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              This will permanently remove all trades for this day and update your stats.
+              {dayToDeleteAll && (
+                <span className="block mt-2 text-zinc-300">
+                  <strong>{dayToDeleteAll.dayLabel}</strong> - {dayToDeleteAll.totalTrades} trade{dayToDeleteAll.totalTrades !== 1 ? 's' : ''} with total P&L of{" "}
+                  <span className={dayToDeleteAll.netPnl >= 0 ? "text-emerald-400" : "text-red-400"}>
+                    {dayToDeleteAll.netPnl >= 0 ? "+" : ""}${dayToDeleteAll.netPnl.toFixed(2)}
+                  </span>
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 mt-4">
+            <Button
+              variant="ghost"
+              onClick={() => setDeleteAllDialogOpen(false)}
+              disabled={deletingAll}
+              className="text-zinc-400 hover:text-white"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteAllTrades}
+              disabled={deletingAll}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deletingAll ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                `Delete ${dayToDeleteAll?.totalTrades || 0} trades`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   )
 }

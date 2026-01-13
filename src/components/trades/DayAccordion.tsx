@@ -26,6 +26,7 @@ interface DayAccordionProps {
   onToggle: () => void
   onAddNote?: () => void
   onDeleteTrade?: (trade: Trade) => void
+  onDeleteAllTrades?: (day: DayData) => void
   className?: string
 }
 
@@ -35,11 +36,9 @@ export function DayAccordion({
   onToggle,
   onAddNote,
   onDeleteTrade,
+  onDeleteAllTrades,
   className,
 }: DayAccordionProps) {
-  // #region agent log
-  console.log('[DEBUG-D] DayAccordion render', { date: day.date, isExpanded });
-  // #endregion
 
   return (
     <div className={cn("glass-card overflow-hidden", className)}>
@@ -93,6 +92,27 @@ export function DayAccordion({
             >
               <Play className="w-4 h-4" />
             </button>
+            {onDeleteAllTrades && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button 
+                    className="p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-muted)] hover:text-white"
+                    title="More options"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800">
+                  <DropdownMenuItem 
+                    onClick={() => onDeleteAllTrades(day)}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete all trades ({day.totalTrades})
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </button>
