@@ -4,7 +4,6 @@ import {
   Users,
   FileText,
   LineChart,
-  MessageSquare,
   TrendingUp,
   Clock,
   ChevronRight,
@@ -19,6 +18,14 @@ import { useUniversity } from "@/lib/contexts/UniversityContext"
 import { useUniversityProgress } from "@/lib/hooks/useUniversityProgress"
 import { useUniversityAssignments } from "@/lib/hooks/useUniversityAssignments"
 import { useUniversityTradeLogs } from "@/lib/hooks/useUniversityTradeLogs"
+import { EngagementAnalytics } from "@/components/university/EngagementAnalytics"
+import { DisputeEvidenceGenerator } from "@/components/university/DisputeEvidenceGenerator"
+import { 
+  getEngagementStatus, 
+  getEngagementColor, 
+  getEngagementBadge,
+  getEngagementBgColor
+} from "@/lib/types/engagement"
 
 interface PageProps {
   params: { classId: string }
@@ -165,6 +172,9 @@ export default function InstructorDashboardPage({ params }: PageProps) {
           </GlassCard>
         </div>
 
+        {/* Engagement Analytics Section */}
+        <EngagementAnalytics courseId={classId} />
+
         {/* Two Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Pending Submissions */}
@@ -264,7 +274,7 @@ export default function InstructorDashboardPage({ params }: PageProps) {
           </GlassCard>
         </div>
 
-        {/* Student Progress Table */}
+        {/* Student Progress Table with Engagement & Dispute Evidence */}
         <GlassCard className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">Student Progress</h2>
@@ -292,11 +302,12 @@ export default function InstructorDashboardPage({ params }: PageProps) {
                     <th className="text-left text-xs font-medium text-[var(--text-muted)] py-3 px-2">Assignments</th>
                     <th className="text-left text-xs font-medium text-[var(--text-muted)] py-3 px-2">Trade Logs</th>
                     <th className="text-left text-xs font-medium text-[var(--text-muted)] py-3 px-2">Progress</th>
+                    <th className="text-left text-xs font-medium text-[var(--text-muted)] py-3 px-2">Status</th>
+                    <th className="text-left text-xs font-medium text-[var(--text-muted)] py-3 px-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allStudentsProgress.slice(0, 5).map((sp) => {
-                    // sp is a flat StudentProgress object (user_id, user_name, lessons_completed, etc.)
+                  {allStudentsProgress.slice(0, 10).map((sp) => {
                     const lessonPct = sp.total_lessons > 0 
                       ? Math.round((sp.lessons_completed / sp.total_lessons) * 100) 
                       : 0
@@ -304,6 +315,12 @@ export default function InstructorDashboardPage({ params }: PageProps) {
                       ? Math.round((sp.assignments_completed / sp.total_assignments) * 100) 
                       : 0
                     const overallPct = Math.round((lessonPct + assignPct) / 2)
+                    
+                    // Estimate engagement status based on progress
+                    // In a full implementation, this would come from engagement metrics
+                    const daysInactive = 0 // Would come from engagement metrics
+                    const engagementScore = overallPct // Simplified - would use real score
+                    const status = getEngagementStatus(engagementScore, daysInactive)
 
                     return (
                       <tr key={sp.user_id} className="border-b border-white/5">
@@ -337,6 +354,19 @@ export default function InstructorDashboardPage({ params }: PageProps) {
                             </div>
                             <span className="text-xs text-[var(--text-muted)]">{overallPct}%</span>
                           </div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getEngagementBgColor(status)} ${getEngagementColor(status)}`}>
+                            {getEngagementBadge(status)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2">
+                          <DisputeEvidenceGenerator
+                            studentId={sp.user_id}
+                            studentName={sp.user_name || 'Student'}
+                            courseId={classId}
+                            variant="icon"
+                          />
                         </td>
                       </tr>
                     )

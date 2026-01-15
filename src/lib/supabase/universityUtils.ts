@@ -295,6 +295,14 @@ export async function joinCourse(
     return { success: false, error: 'Failed to join course' }
   }
 
+  // Log enrollment activity
+  logActivity(
+    userId,
+    course.id,
+    'course_enrolled',
+    `Enrolled in course: ${course.name}`
+  ).catch(() => {}) // Fire and forget
+
   return { success: true, course }
 }
 
@@ -554,7 +562,8 @@ export async function updateLesson(
 export async function markLessonComplete(
   userId: string,
   lessonId: string,
-  completed: boolean = true
+  completed: boolean = true,
+  courseId?: string
 ): Promise<boolean> {
   const supabase = getClient()
   if (!supabase) return false
@@ -573,6 +582,17 @@ export async function markLessonComplete(
   if (error) {
     console.error('Error updating lesson progress:', error)
     return false
+  }
+
+  // Log activity if courseId is provided
+  if (completed && courseId) {
+    logActivity(
+      userId,
+      courseId,
+      'lesson_completed',
+      `Completed lesson`,
+      { lessonId }
+    ).catch(() => {}) // Fire and forget
   }
 
   return true
@@ -694,6 +714,23 @@ export async function submitAssignment(
   if (error) {
     console.error('Error submitting assignment:', error)
     return null
+  }
+
+  // Log activity - get course_id from assignment
+  const { data: assignment } = await supabase
+    .from('assignments')
+    .select('course_id')
+    .eq('id', assignmentId)
+    .single()
+
+  if (assignment?.course_id) {
+    logActivity(
+      studentId,
+      assignment.course_id,
+      'assignment_submitted',
+      `Submitted assignment`,
+      { assignmentId }
+    ).catch(() => {}) // Fire and forget
   }
 
   return data
@@ -1034,6 +1071,22 @@ export async function sendMessage(
     .update({ updated_at: new Date().toISOString() })
     .eq('id', threadId)
 
+  // Log activity - get course_id from thread
+  const { data: thread } = await supabase
+    .from('message_threads')
+    .select('course_id')
+    .eq('id', threadId)
+    .single()
+
+  if (thread?.course_id) {
+    logActivity(
+      senderId,
+      thread.course_id,
+      'message_sent',
+      `Sent a message in course discussion`
+    ).catch(() => {}) // Fire and forget
+  }
+
   return data
 }
 
@@ -1100,6 +1153,15 @@ export async function submitTradeLog(
     console.error('Error submitting trade log:', error)
     return null
   }
+
+  // Log activity
+  logActivity(
+    studentId,
+    courseId,
+    'trade_log_submitted',
+    `Submitted trade log for ${data.symbol} (${data.side})`,
+    { metadata: { symbol: data.symbol, side: data.side, pnl: data.pnl } }
+  ).catch(() => {}) // Fire and forget
 
   return log
 }
@@ -2360,3 +2422,167 @@ export async function getModulesWithFullLockStatus(
   return result
 }
 
+// ============================================
+// ACTIVITY AUDIT LOGGING
+// ============================================
+
+export type ActivityType = 
+  | 'lesson_started'
+  | 'lesson_completed'
+  | 'assignment_started'
+  | 'assignment_submitted'
+  | 'trade_log_submitted'
+  | 'message_sent'
+  | 'course_enrolled'
+  | 'module_accessed'
+  | 'terms_accepted'
+  | 'login'
+  | 'session_started'
+  | 'session_ended'
+
+/**
+ * Log an activity to the audit log for engagement tracking and dispute evidence
+ */
+export async function logActivity(
+  userId: string,
+  courseId: string,
+  activityType: ActivityType,
+  description: string,
+  options?: {
+    lessonId?: string
+    moduleId?: string
+    assignmentId?: string
+    ipAddress?: string
+    userAgent?: string
+    sessionDuration?: number
+    metadata?: Record<string, unknown>
+  }
+): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  try {
+    const { error } = await supabase
+      .from('activity_audit_log')
+      .insert({
+        user_id: userId,
+        course_id: courseId,
+        activity_type: activityType,
+        activity_description: description,
+        lesson_id: options?.lessonId || null,
+        module_id: options?.moduleId || null,
+        assignment_id: options?.assignmentId || null,
+        ip_address: options?.ipAddress || null,
+        user_agent: options?.userAgent || null,
+        session_duration_seconds: options?.sessionDuration || null,
+        metadata: options?.metadata || {}
+      })
+
+    if (error) {
+      // Silently fail - don't break the main operation if audit logging fails
+      // This might happen if the migration hasn't been run yet
+      console.warn('Activity logging failed (table may not exist):', error.message)
+      return false
+    }
+
+    return true
+  } catch (err) {
+    console.warn('Activity logging error:', err)
+    return false
+  }
+}
+
+/**
+ * Log terms acceptance for a course enrollment
+ */
+export async function logTermsAcceptance(
+  userId: string,
+  courseId: string,
+  termsVersion: string = '1.0',
+  options?: {
+    ipAddress?: string
+    userAgent?: string
+    contentHash?: string
+  }
+): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  try {
+    const { error } = await supabase
+      .from('terms_acceptance_log')
+      .upsert({
+        user_id: userId,
+        course_id: courseId,
+        terms_version: termsVersion,
+        terms_content_hash: options?.contentHash || null,
+        ip_address: options?.ipAddress || null,
+        user_agent: options?.userAgent || null,
+        accepted_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,course_id,terms_version'
+      })
+
+    if (error) {
+      console.warn('Terms acceptance logging failed:', error.message)
+      return false
+    }
+
+    // Also log as an activity
+    await logActivity(userId, courseId, 'terms_accepted', `Accepted terms version ${termsVersion}`)
+
+    return true
+  } catch (err) {
+    console.warn('Terms acceptance error:', err)
+    return false
+  }
+}
+
+/**
+ * Get engagement metrics for a student in a course
+ */
+export async function getStudentEngagementMetrics(
+  userId: string,
+  courseId: string,
+  days: number = 30
+): Promise<{
+  dailyScore: number
+  weeklyScore: number
+  isAtRisk: boolean
+  daysInactive: number
+  recentMetrics: Array<{
+    date: string
+    score: number
+  }>
+} | null> {
+  const supabase = getClient()
+  if (!supabase) return null
+
+  const startDate = new Date()
+  startDate.setDate(startDate.getDate() - days)
+
+  const { data, error } = await supabase
+    .from('student_engagement_metrics')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .gte('metric_date', startDate.toISOString().split('T')[0])
+    .order('metric_date', { ascending: false })
+
+  if (error || !data || data.length === 0) {
+    return null
+  }
+
+  const latest = data[0]
+  
+  return {
+    dailyScore: latest.daily_engagement_score,
+    weeklyScore: latest.weekly_engagement_score,
+    isAtRisk: latest.is_at_risk,
+    daysInactive: latest.days_inactive,
+    recentMetrics: data.map(m => ({
+      date: m.metric_date,
+      score: m.daily_engagement_score
+    }))
+  }
+}
