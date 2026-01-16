@@ -1,18 +1,9 @@
 "use client"
 
 import { useEffect, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/browser'
 import { GlassCard } from '@/components/glass/GlassCard'
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  ReferenceLine
-} from 'recharts'
 import { 
   Users, 
   TrendingUp, 
@@ -23,6 +14,19 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { EngagementAnalyticsData } from '@/lib/types/engagement'
+
+// Dynamic import chart to avoid SSR issues with recharts
+const EngagementChart = dynamic(
+  () => import('./EngagementChart').then(mod => mod.EngagementChart),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="h-[250px] flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-[var(--text-muted)] animate-spin" />
+      </div>
+    )
+  }
+)
 
 interface EngagementAnalyticsProps {
   courseId: string
@@ -287,61 +291,7 @@ export function EngagementAnalytics({ courseId }: EngagementAnalyticsProps) {
       {data.chartData.length > 0 && (
         <GlassCard className="p-6">
           <h3 className="text-sm font-medium text-white mb-4">Engagement Trend (Last 30 Days)</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={data.chartData}>
-              <defs>
-                <linearGradient id="colorEngagement" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--theme-primary))" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="hsl(var(--theme-primary))" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-              <XAxis 
-                dataKey="date" 
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                tickLine={false}
-                axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis 
-                domain={[0, 100]}
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                tickLine={false}
-                axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-              />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'rgba(0, 0, 0, 0.9)', 
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  fontSize: '12px'
-                }}
-                formatter={(value) => [`${value}/100`, 'Engagement Score']}
-              />
-              {/* Reference lines for thresholds */}
-              <ReferenceLine 
-                y={70} 
-                stroke="#22c55e" 
-                strokeDasharray="5 5"
-                strokeOpacity={0.5}
-              />
-              <ReferenceLine 
-                y={40} 
-                stroke="#eab308" 
-                strokeDasharray="5 5"
-                strokeOpacity={0.5}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="score" 
-                stroke="hsl(var(--theme-primary))" 
-                strokeWidth={2}
-                fillOpacity={1} 
-                fill="url(#colorEngagement)" 
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <EngagementChart data={data.chartData} />
           
           {/* Legend */}
           <div className="flex items-center justify-center gap-6 mt-4 text-xs">
@@ -373,4 +323,3 @@ export function EngagementAnalytics({ courseId }: EngagementAnalyticsProps) {
     </div>
   )
 }
-

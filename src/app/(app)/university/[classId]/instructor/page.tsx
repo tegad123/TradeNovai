@@ -317,7 +317,6 @@ export default function InstructorDashboardPage({ params }: PageProps) {
                     const overallPct = Math.round((lessonPct + assignPct) / 2)
                     
                     // Estimate engagement status based on progress
-                    // In a full implementation, this would come from engagement metrics
                     const daysInactive = 0 // Would come from engagement metrics
                     const engagementScore = overallPct // Simplified - would use real score
                     const status = getEngagementStatus(engagementScore, daysInactive)
