@@ -41,6 +41,11 @@ export async function POST(request: Request) {
     
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    // #region agent log
+    console.log('[DEBUG:AUTH_CHECK]', JSON.stringify({hasUser:!!user,userId:user?.id,userEmail:user?.email,authError:authError?.message}));
+    // #endregion
+    
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -457,6 +462,10 @@ export async function POST(request: Request) {
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'))
     const fileName = `dispute-evidence-${studentId}-${Date.now()}.pdf`
 
+    // #region agent log
+    console.log('[DEBUG:UPLOAD_START]', JSON.stringify({fileName,userId:user.id,pdfSize:pdfBuffer.byteLength}));
+    // #endregion
+
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('dispute-evidence')
@@ -465,8 +474,15 @@ export async function POST(request: Request) {
         upsert: false
       })
 
+    // #region agent log
+    console.log('[DEBUG:UPLOAD_RESULT]', JSON.stringify({success:!uploadError,errorMessage:uploadError?.message,errorStatus:(uploadError as any)?.status}));
+    // #endregion
+
     if (uploadError) {
       console.error('Upload error:', uploadError)
+      // #region agent log
+      console.log('[DEBUG:UPLOAD_FALLBACK]', JSON.stringify({errorMessage:uploadError.message,returningBase64:true}));
+      // #endregion
       // Return PDF as base64 if storage upload fails
       const base64 = pdfBuffer.toString('base64')
       return NextResponse.json({
@@ -500,7 +516,7 @@ export async function POST(request: Request) {
       lastActiveDate: lastActive
     }
 
-    const { data: documentRecord } = await supabase
+    const { data: documentRecord, error: dbError } = await supabase
       .from('dispute_evidence_documents')
       .insert({
         user_id: studentId,
@@ -515,6 +531,10 @@ export async function POST(request: Request) {
       })
       .select()
       .single()
+
+    // #region agent log
+    console.log('[DEBUG:DB_INSERT]', JSON.stringify({success:!dbError,documentId:documentRecord?.id,dbError:dbError?.message}));
+    // #endregion
 
     return NextResponse.json({
       success: true,
