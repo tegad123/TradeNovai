@@ -223,6 +223,7 @@ export function useQuizTaking({ quizId, studentId }: UseQuizTakingOptions): UseQ
     }, 1000)
 
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer?.is_running])
 
   // Auto-submit when timer expires
@@ -230,6 +231,7 @@ export function useQuizTaking({ quizId, studentId }: UseQuizTakingOptions): UseQ
     if (timer?.is_expired && attempt && !submitting) {
       submitQuiz()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer?.is_expired])
 
   const startQuiz = useCallback(async () => {
@@ -296,7 +298,8 @@ export function useQuizTaking({ quizId, studentId }: UseQuizTakingOptions): UseQ
       setSubmitting(true)
       
       // Save all unsaved responses first
-      for (const [questionId, response] of responses) {
+      const responseEntries = Array.from(responses.entries())
+      for (const [questionId, response] of responseEntries) {
         await saveQuizResponse(attempt.id, questionId, response)
       }
       

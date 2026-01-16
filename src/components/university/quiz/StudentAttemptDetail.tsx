@@ -21,7 +21,7 @@ interface StudentAttemptDetailProps {
   onBack?: () => void
 }
 
-interface ResponseWithDetails extends QuizResponse {
+interface ResponseWithDetails extends Omit<QuizResponse, 'question' | 'selected_option'> {
   question: QuizQuestion
   selected_option: QuizQuestionOption | null
 }
