@@ -257,6 +257,7 @@ export function useQuizTaking({ quizId, studentId }: UseQuizTakingOptions): UseQ
             const restoredResponses = new Map<string, SubmitResponseData>()
             for (const resp of savedResponses) {
               restoredResponses.set(resp.question_id, {
+                question_id: resp.question_id,
                 selected_option_id: resp.selected_option_id || undefined,
                 text_response: resp.text_response || undefined
               })
