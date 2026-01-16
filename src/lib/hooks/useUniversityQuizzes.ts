@@ -292,25 +292,34 @@ export function useQuizTaking({ quizId, studentId }: UseQuizTakingOptions): UseQ
   }, [currentQuestionIndex])
 
   const submitQuiz = useCallback(async (): Promise<QuizAttempt | null> => {
-    if (!attempt) return null
+    console.log('[DEBUG:QUIZ_SUBMIT:ENTRY]', JSON.stringify({hasAttempt:!!attempt,attemptId:attempt?.id,responseCount:responses.size}));
+
+    if (!attempt) {
+      console.log('[DEBUG:QUIZ_SUBMIT:NO_ATTEMPT]', 'No attempt found, returning null');
+      return null
+    }
     
     try {
       setSubmitting(true)
       
       // Save all unsaved responses first
       const responseEntries = Array.from(responses.entries())
+      console.log('[DEBUG:QUIZ_SUBMIT:SAVING_RESPONSES]', JSON.stringify({attemptId:attempt.id,responseCount:responseEntries.length}));
       for (const [questionId, response] of responseEntries) {
         await saveQuizResponse(attempt.id, questionId, response)
       }
       
       // Submit and grade
+      console.log('[DEBUG:QUIZ_SUBMIT:CALLING_SUBMIT]', JSON.stringify({attemptId:attempt.id}));
       const result = await submitQuizAttempt(attempt.id)
+      console.log('[DEBUG:QUIZ_SUBMIT:RESULT]', JSON.stringify({hasResult:!!result,resultStatus:result?.status,score:result?.score_percentage}));
       if (result) {
         setAttempt(result)
         setTimer(prev => prev ? { ...prev, is_running: false } : null)
       }
       return result
     } catch (err) {
+      console.log('[DEBUG:QUIZ_SUBMIT:ERROR]', JSON.stringify({error:String(err)}));
       console.error('Error submitting quiz:', err)
       setError('Failed to submit quiz')
       return null

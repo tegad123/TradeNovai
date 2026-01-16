@@ -2602,8 +2602,7 @@ import type {
   CreateQuestionData,
   CreateOptionData,
   SubmitResponseData,
-  QuizStats,
-  QuestionType
+  QuizStats
 } from '@/lib/types/quiz'
 
 export type { Quiz, QuizQuestion, QuizQuestionOption, QuizAttempt, QuizResponse, QuizWithQuestions, QuizStats }
@@ -2667,7 +2666,6 @@ export async function getQuizWithQuestions(quizId: string): Promise<QuizWithQues
     return { ...quiz, questions: [] }
   }
 
-  // Sort options within each question
   const questionsWithSortedOptions = questions.map(q => ({
     ...q,
     options: ((q.options as QuizQuestionOption[]) || []).sort((a, b) => a.order - b.order)
@@ -2769,7 +2767,6 @@ export async function createQuizQuestion(
   const supabase = getClient()
   if (!supabase) return null
 
-  // Get current max order
   const { data: existingQuestions } = await supabase
     .from('quiz_questions')
     .select('order')
@@ -2799,7 +2796,6 @@ export async function createQuizQuestion(
     return null
   }
 
-  // Create options if provided (for MC/TF)
   if (data.options && data.options.length > 0) {
     const optionsToInsert = data.options.map((opt, idx) => ({
       question_id: question.id,
@@ -2880,7 +2876,6 @@ export async function createQuestionOption(
   const supabase = getClient()
   if (!supabase) return null
 
-  // Get current max order
   const { data: existingOptions } = await supabase
     .from('quiz_question_options')
     .select('order')
@@ -2978,7 +2973,6 @@ export async function startQuizAttempt(
     throw new Error('Maximum attempts reached for this quiz')
   }
 
-  // Get current attempt count
   const { count } = await supabase
     .from('quiz_attempts')
     .select('*', { count: 'exact', head: true })
@@ -2987,7 +2981,6 @@ export async function startQuizAttempt(
 
   const attemptNumber = (count || 0) + 1
 
-  // Create new attempt
   const { data: attempt, error } = await supabase
     .from('quiz_attempts')
     .insert({
@@ -3046,6 +3039,8 @@ export async function saveQuizResponse(
   const supabase = getClient()
   if (!supabase) return false
 
+  console.log('[DEBUG:SAVE_RESPONSE]', JSON.stringify({attemptId,questionId,hasOptionId:!!response.selected_option_id,hasText:!!response.text_response}));
+
   const { error } = await supabase
     .from('quiz_responses')
     .upsert({
@@ -3058,6 +3053,7 @@ export async function saveQuizResponse(
     })
 
   if (error) {
+    console.log('[DEBUG:SAVE_RESPONSE:ERROR]', JSON.stringify({error:error.message,code:error.code}));
     console.error('Error saving response:', error)
     return false
   }
@@ -3072,7 +3068,8 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
   const supabase = getClient()
   if (!supabase) return null
 
-  // Get the attempt with quiz info
+  console.log('[DEBUG:SUBMIT_ATTEMPT:START]', JSON.stringify({attemptId}));
+
   const { data: attempt, error: attemptError } = await supabase
     .from('quiz_attempts')
     .select(`
@@ -3083,11 +3080,13 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
     .single()
 
   if (attemptError || !attempt) {
+    console.log('[DEBUG:SUBMIT_ATTEMPT:FETCH_ERROR]', JSON.stringify({error:attemptError?.message,attemptId}));
     console.error('Error fetching attempt:', attemptError)
     return null
   }
 
-  // Get all responses with question/option data for grading
+  console.log('[DEBUG:SUBMIT_ATTEMPT:STATUS]', JSON.stringify({attemptId,status:attempt.status,quizId:attempt.quiz_id}));
+
   const { data: responses, error: responsesError } = await supabase
     .from('quiz_responses')
     .select(`
@@ -3098,11 +3097,14 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
     .eq('attempt_id', attemptId)
 
   if (responsesError) {
+    console.log('[DEBUG:SUBMIT_ATTEMPT:RESPONSES_ERROR]', JSON.stringify({error:responsesError.message}));
     console.error('Error fetching responses:', responsesError)
     return null
   }
 
-  // Grade each response
+  console.log('[DEBUG:SUBMIT_ATTEMPT:RESPONSES]', JSON.stringify({responseCount:responses?.length||0}));
+  // #endregion
+
   let totalEarned = 0
   for (const resp of responses || []) {
     const question = resp.question as QuizQuestion
@@ -3110,19 +3112,16 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
     let pointsEarned = 0
 
     if (question.question_type === 'multiple_choice' || question.question_type === 'true_false') {
-      // Auto-grade MC/TF
       const selectedOption = resp.selected_option as QuizQuestionOption | null
       isCorrect = selectedOption?.is_correct || false
       pointsEarned = isCorrect ? question.points : 0
     } else if (question.question_type === 'short_answer') {
-      // Short answer needs manual grading - mark as pending
-      isCorrect = false // Will be updated by instructor
+      isCorrect = false
       pointsEarned = 0
     }
 
     totalEarned += pointsEarned
 
-    // Update response with grading
     await supabase
       .from('quiz_responses')
       .update({
@@ -3132,12 +3131,10 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
       .eq('id', resp.id)
   }
 
-  // Calculate time spent
   const startedAt = new Date(attempt.started_at)
   const submittedAt = new Date()
   const timeSpentSeconds = Math.floor((submittedAt.getTime() - startedAt.getTime()) / 1000)
 
-  // Get total possible points
   const { data: questions } = await supabase
     .from('quiz_questions')
     .select('points')
@@ -3146,11 +3143,9 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
   const totalPossible = questions?.reduce((sum, q) => sum + q.points, 0) || 0
   const percentage = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0
 
-  // Check if there are any short answer questions needing grading
   const hasShortAnswer = responses?.some(r => (r.question as QuizQuestion).question_type === 'short_answer')
   const status = hasShortAnswer ? 'submitted' : 'graded'
 
-  // Update attempt
   const { data: updatedAttempt, error: updateError } = await supabase
     .from('quiz_attempts')
     .update({
@@ -3165,9 +3160,12 @@ export async function submitQuizAttempt(attemptId: string): Promise<QuizAttempt 
     .single()
 
   if (updateError) {
+    console.log('[DEBUG:SUBMIT_ATTEMPT:UPDATE_ERROR]', JSON.stringify({error:updateError.message,code:updateError.code}));
     console.error('Error updating attempt:', updateError)
     return null
   }
+
+  console.log('[DEBUG:SUBMIT_ATTEMPT:SUCCESS]', JSON.stringify({attemptId,score:totalEarned,percentage,status}));
 
   return updatedAttempt
 }
@@ -3255,7 +3253,6 @@ export async function gradeShortAnswerResponse(
     return false
   }
 
-  // Recalculate attempt score
   const { data: response } = await supabase
     .from('quiz_responses')
     .select('attempt_id')
@@ -3285,7 +3282,6 @@ async function recalculateAttemptScore(attemptId: string): Promise<void> {
 
   const totalEarned = responses.reduce((sum, r) => sum + (r.points_earned || 0), 0)
 
-  // Get total possible
   const { data: attempt } = await supabase
     .from('quiz_attempts')
     .select('quiz_id')
@@ -3302,7 +3298,6 @@ async function recalculateAttemptScore(attemptId: string): Promise<void> {
   const totalPossible = questions?.reduce((sum, q) => sum + q.points, 0) || 0
   const percentage = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0
 
-  // Check if all responses are graded
   const allGraded = responses.every(r => r.is_correct !== null)
 
   await supabase
@@ -3351,3 +3346,4 @@ export async function getQuizStats(quizId: string): Promise<QuizStats | null> {
     average_time_seconds: times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0
   }
 }
+
