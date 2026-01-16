@@ -239,17 +239,55 @@ export function useQuizTaking({ quizId, studentId }: UseQuizTakingOptions): UseQ
     
     try {
       setLoading(true)
-      const newAttempt = await startQuizAttempt(quizId, studentId)
-      if (newAttempt) {
-        setAttempt(newAttempt)
+      const attemptResult = await startQuizAttempt(quizId, studentId)
+      if (attemptResult) {
+        setAttempt(attemptResult)
         
-        // Start timer if timed quiz
+        // Load existing responses for this attempt (for resume functionality)
+        const { createClientSafe } = await import('@/lib/supabase/browser')
+        const supabase = createClientSafe()
+        if (supabase) {
+          const { data: savedResponses } = await supabase
+            .from('quiz_responses')
+            .select('question_id, selected_option_id, text_response')
+            .eq('attempt_id', attemptResult.id)
+          
+          if (savedResponses && savedResponses.length > 0) {
+            console.log('[DEBUG:RESUME:LOADED_RESPONSES]', JSON.stringify({ count: savedResponses.length }))
+            const restoredResponses = new Map<string, SubmitResponseData>()
+            for (const resp of savedResponses) {
+              restoredResponses.set(resp.question_id, {
+                selected_option_id: resp.selected_option_id || undefined,
+                text_response: resp.text_response || undefined
+              })
+            }
+            setResponses(restoredResponses)
+          }
+        }
+        
+        // Start/resume timer if timed quiz
         if (quiz?.time_limit_minutes) {
-          setTimer({
-            remaining_seconds: quiz.time_limit_minutes * 60,
-            is_running: true,
-            is_expired: false
-          })
+          // Calculate remaining time based on when attempt started
+          const startedAt = new Date(attemptResult.started_at)
+          const now = new Date()
+          const elapsedSeconds = Math.floor((now.getTime() - startedAt.getTime()) / 1000)
+          const totalSeconds = quiz.time_limit_minutes * 60
+          const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds)
+          
+          if (remainingSeconds <= 0) {
+            // Timer already expired
+            setTimer({
+              remaining_seconds: 0,
+              is_running: false,
+              is_expired: true
+            })
+          } else {
+            setTimer({
+              remaining_seconds: remainingSeconds,
+              is_running: true,
+              is_expired: false
+            })
+          }
         }
       }
     } catch (err) {

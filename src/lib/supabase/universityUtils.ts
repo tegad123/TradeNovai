@@ -2955,6 +2955,7 @@ export async function deleteQuestionOption(optionId: string): Promise<boolean> {
 
 /**
  * Start a quiz attempt
+ * If an in-progress attempt already exists, returns that instead of creating a new one
  */
 export async function startQuizAttempt(
   quizId: string,
@@ -2962,6 +2963,21 @@ export async function startQuizAttempt(
 ): Promise<QuizAttempt | null> {
   const supabase = getClient()
   if (!supabase) return null
+
+  // First, check for existing in-progress attempt
+  const { data: existingAttempt, error: existingError } = await supabase
+    .from('quiz_attempts')
+    .select('*')
+    .eq('quiz_id', quizId)
+    .eq('student_id', studentId)
+    .eq('status', 'in_progress')
+    .single()
+
+  // If an in-progress attempt exists, return it (resume)
+  if (existingAttempt && !existingError) {
+    console.log('[DEBUG:START_ATTEMPT:RESUMING]', JSON.stringify({ attemptId: existingAttempt.id }))
+    return existingAttempt
+  }
 
   // Check if student can attempt (max attempts not exceeded)
   const { data: canAttempt } = await supabase.rpc('can_attempt_quiz', {
@@ -2997,6 +3013,7 @@ export async function startQuizAttempt(
     throw new Error(`Failed to start quiz attempt: ${error.message}`)
   }
 
+  console.log('[DEBUG:START_ATTEMPT:NEW]', JSON.stringify({ attemptId: attempt.id }))
   return attempt
 }
 
