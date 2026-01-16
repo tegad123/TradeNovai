@@ -485,11 +485,29 @@ export async function POST(request: Request) {
       // #endregion
       // Return PDF as base64 if storage upload fails
       const base64 = pdfBuffer.toString('base64')
+      
+      // Build summary for client display (same as successful path)
+      const fallbackSummary: EvidenceSummary = {
+        totalLogins,
+        completedLessons,
+        totalLessons,
+        completionPercentage,
+        totalAssignments,
+        totalTradeLogs,
+        totalMessages,
+        avgEngagementScore: avgEngagement.toFixed(0),
+        daysSinceLastActive,
+        totalTimeSpent: `${Math.floor(totalMinutesSpent / 60)}h ${totalMinutesSpent % 60}m`,
+        enrollmentDate: enrollment.enrolled_at,
+        lastActiveDate: lastActive
+      }
+      
       return NextResponse.json({
         success: true,
         downloadUrl: `data:application/pdf;base64,${base64}`,
         fileName,
-        storageError: uploadError.message
+        storageError: uploadError.message,
+        summary: fallbackSummary
       })
     }
 
