@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ClipboardList,
@@ -16,7 +16,9 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  Settings2,
+  Lock
 } from 'lucide-react'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { GlassCard } from '@/components/glass/GlassCard'
@@ -29,10 +31,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
 import { useUniversity } from '@/lib/contexts/UniversityContext'
 import { useUniversityQuizzes } from '@/lib/hooks/useUniversityQuizzes'
+import { useUniversityModules } from '@/lib/hooks/useUniversityModules'
+import { useUniversityAssignments } from '@/lib/hooks/useUniversityAssignments'
 import { QuizCreator } from '@/components/university/quiz'
-import { getStudentQuizAttempts } from '@/lib/supabase/universityUtils'
+import { 
+  getStudentQuizAttempts,
+  getCourseStudents,
+  getQuizTargets,
+  assignQuizToStudent,
+  unassignQuizFromStudent,
+  updateQuiz,
+  getQuizModulePrerequisites,
+  setQuizModulePrerequisites,
+  getQuizAssignmentPrerequisites,
+  setQuizAssignmentPrerequisites,
+  type UserProfile
+} from '@/lib/supabase/universityUtils'
 import type { Quiz, QuizAttempt } from '@/lib/types/quiz'
 
 interface PageProps {
@@ -42,16 +59,17 @@ interface PageProps {
 export default function QuizzesPage({ params }: PageProps) {
   const { classId } = params
   const router = useRouter()
-  const { currentRole, currentUser } = useUniversity()
+  const { currentRole, currentUser, currentCourse } = useUniversity()
   
   const {
     quizzes,
+    quizLockStatus,
     loading,
     error,
     deleteExistingQuiz,
     publishQuiz,
     refresh
-  } = useUniversityQuizzes({ courseId: classId, role: currentRole })
+  } = useUniversityQuizzes({ courseId: classId, role: currentRole, studentId: currentUser?.id })
   
   const [showCreator, setShowCreator] = useState(false)
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null)
@@ -60,8 +78,53 @@ export default function QuizzesPage({ params }: PageProps) {
   const [deleting, setDeleting] = useState(false)
   const [studentAttempts, setStudentAttempts] = useState<Record<string, QuizAttempt[]>>({})
   const [loadingAttempts, setLoadingAttempts] = useState<Record<string, boolean>>({})
+  
+  // Manage access state
+  const [manageAccessOpen, setManageAccessOpen] = useState(false)
+  const [accessQuizId, setAccessQuizId] = useState<string | null>(null)
+  const [courseStudents, setCourseStudents] = useState<UserProfile[]>([])
+  const [assignedStudentIds, setAssignedStudentIds] = useState<string[]>([])
+  const [updatingAccess, setUpdatingAccess] = useState(false)
+  
+  // Prerequisites state
+  const [selectedModulePrereqs, setSelectedModulePrereqs] = useState<string[]>([])
+  const [selectedAssignmentPrereqs, setSelectedAssignmentPrereqs] = useState<string[]>([])
+  const [savingPrerequisites, setSavingPrerequisites] = useState(false)
+  
+  // Get modules and assignments for prerequisite selection
+  const { modules } = useUniversityModules(currentCourse?.id || null)
+  const { assignments } = useUniversityAssignments(classId, currentRole)
 
   const isInstructor = currentRole === 'instructor'
+  
+  // Load course students for targeting
+  useEffect(() => {
+    async function loadStudents() {
+      if (!classId || !isInstructor) return
+      const students = await getCourseStudents(classId)
+      setCourseStudents(students)
+    }
+    loadStudents()
+  }, [classId, isInstructor])
+  
+  // Load quiz targets and prerequisites when manage access opens
+  useEffect(() => {
+    async function loadQuizAccess() {
+      if (!accessQuizId || !manageAccessOpen) return
+      
+      // Load targets
+      const targets = await getQuizTargets(accessQuizId)
+      setAssignedStudentIds(targets)
+      
+      // Load prerequisites
+      const modulePrereqs = await getQuizModulePrerequisites(accessQuizId)
+      setSelectedModulePrereqs(modulePrereqs)
+      
+      const assignmentPrereqs = await getQuizAssignmentPrerequisites(accessQuizId)
+      setSelectedAssignmentPrereqs(assignmentPrereqs)
+    }
+    loadQuizAccess()
+  }, [accessQuizId, manageAccessOpen])
 
   // Load student attempts for each quiz
   const loadStudentAttempts = async (quizId: string) => {
@@ -129,6 +192,71 @@ export default function QuizzesPage({ params }: PageProps) {
     setEditingQuiz(null)
     refresh()
   }
+  
+  const handleManageAccess = (quiz: Quiz, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setAccessQuizId(quiz.id)
+    setManageAccessOpen(true)
+  }
+  
+  const handleToggleRestricted = async (restricted: boolean) => {
+    if (!accessQuizId) return
+    setUpdatingAccess(true)
+    await updateQuiz(accessQuizId, { is_restricted: restricted } as any)
+    refresh()
+    setUpdatingAccess(false)
+  }
+  
+  const handleToggleQuizPublished = async (published: boolean) => {
+    if (!accessQuizId) return
+    setUpdatingAccess(true)
+    await updateQuiz(accessQuizId, { is_published: published } as any)
+    refresh()
+    setUpdatingAccess(false)
+  }
+  
+  const handleToggleStudentAssignment = async (studentId: string) => {
+    if (!accessQuizId) return
+    setUpdatingAccess(true)
+    
+    if (assignedStudentIds.includes(studentId)) {
+      await unassignQuizFromStudent(accessQuizId, studentId)
+      setAssignedStudentIds(prev => prev.filter(id => id !== studentId))
+    } else {
+      await assignQuizToStudent(accessQuizId, studentId)
+      setAssignedStudentIds(prev => [...prev, studentId])
+    }
+    
+    setUpdatingAccess(false)
+  }
+  
+  const handleToggleModulePrereq = (moduleId: string) => {
+    setSelectedModulePrereqs(prev => 
+      prev.includes(moduleId) 
+        ? prev.filter(id => id !== moduleId)
+        : [...prev, moduleId]
+    )
+  }
+  
+  const handleToggleAssignmentPrereq = (assignmentId: string) => {
+    setSelectedAssignmentPrereqs(prev => 
+      prev.includes(assignmentId) 
+        ? prev.filter(id => id !== assignmentId)
+        : [...prev, assignmentId]
+    )
+  }
+  
+  const handleSavePrerequisites = async () => {
+    if (!accessQuizId) return
+    setSavingPrerequisites(true)
+    
+    await setQuizModulePrerequisites(accessQuizId, selectedModulePrereqs)
+    await setQuizAssignmentPrerequisites(accessQuizId, selectedAssignmentPrereqs)
+    
+    setSavingPrerequisites(false)
+  }
+  
+  const getAccessQuiz = () => quizzes.find(q => q.id === accessQuizId)
 
   const getQuizStatusBadge = (quiz: Quiz, attempts: QuizAttempt[] | undefined) => {
     if (isInstructor) {
@@ -255,31 +383,70 @@ export default function QuizzesPage({ params }: PageProps) {
           <div className="space-y-4">
             {quizzes.map((quiz) => {
               const attempts = studentAttempts[quiz.id]
+              const lockStatus = quizLockStatus.get(quiz.id)
+              const isLocked = !isInstructor && lockStatus?.isLocked
               
               return (
                 <GlassCard
                   key={quiz.id}
-                  className="p-4 hover:bg-white/[0.08] cursor-pointer transition-all"
-                  onClick={() => handleQuizClick(quiz)}
-                  onMouseEnter={() => !isInstructor && loadStudentAttempts(quiz.id)}
+                  className={`p-4 transition-all ${
+                    isLocked 
+                      ? 'opacity-60 cursor-not-allowed' 
+                      : 'hover:bg-white/[0.08] cursor-pointer'
+                  }`}
+                  onClick={() => !isLocked && handleQuizClick(quiz)}
+                  onMouseEnter={() => !isInstructor && !isLocked && loadStudentAttempts(quiz.id)}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-4 flex-1">
-                      <div className="w-10 h-10 rounded-xl bg-theme-gradient/20 flex items-center justify-center shrink-0">
-                        <ClipboardList className="w-5 h-5 text-[hsl(var(--theme-primary))]" />
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                        isLocked ? 'bg-white/10' : 'bg-theme-gradient/20'
+                      }`}>
+                        {isLocked ? (
+                          <Lock className="w-5 h-5 text-[var(--text-muted)]" />
+                        ) : (
+                          <ClipboardList className="w-5 h-5 text-[hsl(var(--theme-primary))]" />
+                        )}
                       </div>
                       
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-medium text-white">{quiz.title}</h3>
-                          {getQuizStatusBadge(quiz, attempts)}
+                          {isLocked ? (
+                            <span className="flex items-center gap-1 text-xs text-[var(--text-muted)] bg-white/5 px-2 py-1 rounded-full">
+                              <Lock className="w-3 h-3" />
+                              Locked
+                            </span>
+                          ) : (
+                            getQuizStatusBadge(quiz, attempts)
+                          )}
+                          {isInstructor && quiz.is_restricted && (
+                            <span className="flex items-center gap-1 text-xs text-orange-400 bg-orange-400/10 px-2 py-1 rounded-full">
+                              <Users className="w-3 h-3" />
+                              Restricted
+                            </span>
+                          )}
                         </div>
                         
-                        {quiz.description && (
+                        {isLocked && lockStatus ? (
+                          <p className="text-sm text-[var(--text-muted)]">
+                            Complete prerequisites to unlock this quiz
+                            {lockStatus.incompleteModuleIds.length > 0 && (
+                              <span className="block text-xs mt-1">
+                                {lockStatus.incompleteModuleIds.length} module{lockStatus.incompleteModuleIds.length !== 1 ? 's' : ''} remaining
+                              </span>
+                            )}
+                            {lockStatus.incompleteAssignmentIds.length > 0 && (
+                              <span className="block text-xs">
+                                {lockStatus.incompleteAssignmentIds.length} assignment{lockStatus.incompleteAssignmentIds.length !== 1 ? 's' : ''} remaining
+                              </span>
+                            )}
+                          </p>
+                        ) : quiz.description ? (
                           <p className="text-sm text-[var(--text-muted)] line-clamp-2">
                             {quiz.description}
                           </p>
-                        )}
+                        ) : null}
                         
                         <div className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
                           <span className="flex items-center gap-1">
@@ -305,6 +472,15 @@ export default function QuizzesPage({ params }: PageProps) {
                     <div className="flex items-center gap-2">
                       {isInstructor && (
                         <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-lg hover:bg-white/10"
+                            onClick={(e) => handleManageAccess(quiz, e)}
+                            title="Manage Access"
+                          >
+                            <Settings2 className="w-4 h-4 text-[var(--text-muted)]" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -389,6 +565,165 @@ export default function QuizzesPage({ params }: PageProps) {
             >
               {deleting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
               Delete Quiz
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Manage Access Dialog */}
+      <Dialog open={manageAccessOpen} onOpenChange={setManageAccessOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manage Quiz Access</DialogTitle>
+            <DialogDescription>
+              Control visibility, targeting, and prerequisites for this quiz.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-6">
+            {/* Published Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Published</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students only see published quizzes.
+                </div>
+              </div>
+              <Switch
+                checked={getAccessQuiz()?.is_published || false}
+                onCheckedChange={handleToggleQuizPublished}
+                disabled={updatingAccess}
+              />
+            </div>
+
+            {/* Restrict Access Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Restrict Access</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Only assigned students will see this quiz.
+                </div>
+              </div>
+              <Switch
+                checked={getAccessQuiz()?.is_restricted || false}
+                onCheckedChange={handleToggleRestricted}
+                disabled={updatingAccess}
+              />
+            </div>
+
+            {/* Module Prerequisites */}
+            <div className="space-y-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Module Prerequisites</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students must complete these modules first
+                </div>
+              </div>
+              <div className="max-h-[120px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {modules.length > 0 ? (
+                  modules.map(mod => (
+                    <div
+                      key={mod.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10"
+                    >
+                      <span className="text-sm text-white">{mod.title}</span>
+                      <Switch
+                        checked={selectedModulePrereqs.includes(mod.id)}
+                        onCheckedChange={() => handleToggleModulePrereq(mod.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-2">
+                    No modules created yet.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Assignment Prerequisites */}
+            <div className="space-y-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-white">Assignment Prerequisites</div>
+                <div className="text-xs text-[var(--text-muted)]">
+                  Students must complete these assignments first
+                </div>
+              </div>
+              <div className="max-h-[120px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {assignments.length > 0 ? (
+                  assignments.map(assignment => (
+                    <div
+                      key={assignment.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10"
+                    >
+                      <span className="text-sm text-white">{assignment.title}</span>
+                      <Switch
+                        checked={selectedAssignmentPrereqs.includes(assignment.id)}
+                        onCheckedChange={() => handleToggleAssignmentPrereq(assignment.id)}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-2">
+                    No assignments created yet.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Save Prerequisites Button */}
+            {(modules.length > 0 || assignments.length > 0) && (
+              <Button
+                variant="glass-theme"
+                size="sm"
+                onClick={handleSavePrerequisites}
+                disabled={savingPrerequisites}
+                className="w-full"
+              >
+                {savingPrerequisites ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Save Prerequisites
+              </Button>
+            )}
+
+            {/* Assign Students (only shown when restricted) */}
+            {getAccessQuiz()?.is_restricted && (
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-white px-1">Assign Students</h4>
+                <div className="max-h-[200px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                  {courseStudents.length > 0 ? (
+                    courseStudents.map(student => (
+                      <div
+                        key={student.id}
+                        className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-theme-gradient flex items-center justify-center text-xs font-bold text-white uppercase">
+                            {student.full_name?.charAt(0) || 'S'}
+                          </div>
+                          <span className="text-sm text-white font-medium">
+                            {student.full_name || 'Student'}
+                          </span>
+                        </div>
+                        <Switch
+                          disabled={updatingAccess}
+                          checked={assignedStudentIds.includes(student.id)}
+                          onCheckedChange={() => handleToggleStudentAssignment(student.id)}
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-[var(--text-muted)] text-center py-4">
+                      No students enrolled yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button variant="glass-theme" className="w-full" onClick={() => setManageAccessOpen(false)}>
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

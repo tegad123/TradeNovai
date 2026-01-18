@@ -3364,3 +3364,308 @@ export async function getQuizStats(quizId: string): Promise<QuizStats | null> {
   }
 }
 
+// ============================================
+// QUIZ TARGETING (Per-Student Assignments)
+// ============================================
+
+/**
+ * Get quiz targets (assigned student IDs)
+ */
+export async function getQuizTargets(quizId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('quiz_targets')
+    .select('user_id')
+    .eq('quiz_id', quizId)
+
+  if (error) {
+    console.error('Error fetching quiz targets:', error)
+    return []
+  }
+
+  return data.map(t => t.user_id)
+}
+
+/**
+ * Assign a quiz to a student
+ */
+export async function assignQuizToStudent(quizId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('quiz_targets')
+    .upsert({ quiz_id: quizId, user_id: userId }, { onConflict: 'quiz_id,user_id' })
+
+  if (error) {
+    console.error('Error assigning quiz to student:', error)
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Remove quiz assignment from a student
+ */
+export async function unassignQuizFromStudent(quizId: string, userId: string): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  const { error } = await supabase
+    .from('quiz_targets')
+    .delete()
+    .eq('quiz_id', quizId)
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('Error unassigning quiz from student:', error)
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Get quizzes visible to a student (filtering by is_restricted and targeting)
+ */
+export async function getStudentVisibleQuizzes(
+  courseId: string,
+  studentId: string
+): Promise<Quiz[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  // Get all published quizzes for the course
+  const { data: allQuizzes, error } = await supabase
+    .from('quizzes')
+    .select('*')
+    .eq('course_id', courseId)
+    .eq('is_published', true)
+    .order('created_at', { ascending: false })
+
+  if (error || !allQuizzes) {
+    console.error('Error fetching quizzes:', error)
+    return []
+  }
+
+  // Get quiz targets for restricted quizzes
+  const restrictedIds = allQuizzes.filter(q => q.is_restricted).map(q => q.id)
+  
+  if (restrictedIds.length === 0) {
+    return allQuizzes
+  }
+
+  const { data: targets } = await supabase
+    .from('quiz_targets')
+    .select('quiz_id')
+    .eq('user_id', studentId)
+    .in('quiz_id', restrictedIds)
+
+  const assignedRestrictedIds = new Set(targets?.map(t => t.quiz_id) || [])
+
+  // Filter: include unrestricted OR student is assigned
+  return allQuizzes.filter(q => 
+    !q.is_restricted || assignedRestrictedIds.has(q.id)
+  )
+}
+
+// ============================================
+// QUIZ PREREQUISITES (Module-Based)
+// ============================================
+
+/**
+ * Set module prerequisites for a quiz
+ */
+export async function setQuizModulePrerequisites(quizId: string, moduleIds: string[]): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // First, delete existing module prerequisites
+  const { error: deleteError } = await supabase
+    .from('quiz_module_prerequisites')
+    .delete()
+    .eq('quiz_id', quizId)
+
+  if (deleteError) {
+    console.error('Error deleting quiz module prerequisites:', deleteError)
+    return false
+  }
+
+  // If no modules, we're done
+  if (moduleIds.length === 0) return true
+
+  // Insert new prerequisites
+  const insertData = moduleIds.map(moduleId => ({
+    quiz_id: quizId,
+    module_id: moduleId
+  }))
+
+  const { error: insertError } = await supabase
+    .from('quiz_module_prerequisites')
+    .insert(insertData)
+
+  if (insertError) {
+    console.error('Error setting quiz module prerequisites:', insertError)
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Get module prerequisites for a quiz
+ */
+export async function getQuizModulePrerequisites(quizId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('quiz_module_prerequisites')
+    .select('module_id')
+    .eq('quiz_id', quizId)
+
+  if (error || !data) return []
+  return data.map(d => d.module_id)
+}
+
+// ============================================
+// QUIZ PREREQUISITES (Assignment-Based)
+// ============================================
+
+/**
+ * Set assignment prerequisites for a quiz
+ */
+export async function setQuizAssignmentPrerequisites(quizId: string, assignmentIds: string[]): Promise<boolean> {
+  const supabase = getClient()
+  if (!supabase) return false
+
+  // First, delete existing assignment prerequisites
+  const { error: deleteError } = await supabase
+    .from('quiz_assignment_prerequisites')
+    .delete()
+    .eq('quiz_id', quizId)
+
+  if (deleteError) {
+    console.error('Error deleting quiz assignment prerequisites:', deleteError)
+    return false
+  }
+
+  // If no assignments, we're done
+  if (assignmentIds.length === 0) return true
+
+  // Insert new prerequisites
+  const insertData = assignmentIds.map(assignmentId => ({
+    quiz_id: quizId,
+    assignment_id: assignmentId
+  }))
+
+  const { error: insertError } = await supabase
+    .from('quiz_assignment_prerequisites')
+    .insert(insertData)
+
+  if (insertError) {
+    console.error('Error setting quiz assignment prerequisites:', insertError)
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Get assignment prerequisites for a quiz
+ */
+export async function getQuizAssignmentPrerequisites(quizId: string): Promise<string[]> {
+  const supabase = getClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('quiz_assignment_prerequisites')
+    .select('assignment_id')
+    .eq('quiz_id', quizId)
+
+  if (error || !data) return []
+  return data.map(d => d.assignment_id)
+}
+
+/**
+ * Check if a quiz is unlocked for a user (all prerequisites met)
+ */
+export async function isQuizUnlockedForUser(quizId: string, userId: string): Promise<{
+  isUnlocked: boolean
+  incompleteModuleIds: string[]
+  incompleteAssignmentIds: string[]
+}> {
+  const supabase = getClient()
+  if (!supabase) return {
+    isUnlocked: false,
+    incompleteModuleIds: [],
+    incompleteAssignmentIds: []
+  }
+
+  // Get module prerequisites
+  const modulePrereqs = await getQuizModulePrerequisites(quizId)
+  const incompleteModuleIds: string[] = []
+  
+  for (const moduleId of modulePrereqs) {
+    const isComplete = await isModuleComplete(moduleId, userId)
+    if (!isComplete) {
+      incompleteModuleIds.push(moduleId)
+    }
+  }
+
+  // Get assignment prerequisites
+  const assignmentPrereqs = await getQuizAssignmentPrerequisites(quizId)
+  const incompleteAssignmentIds: string[] = []
+  
+  for (const assignmentId of assignmentPrereqs) {
+    const isComplete = await isAssignmentCompleted(assignmentId, userId)
+    if (!isComplete) {
+      incompleteAssignmentIds.push(assignmentId)
+    }
+  }
+
+  return {
+    isUnlocked: incompleteModuleIds.length === 0 && incompleteAssignmentIds.length === 0,
+    incompleteModuleIds,
+    incompleteAssignmentIds
+  }
+}
+
+/**
+ * Get quizzes with their lock status for a student
+ */
+export async function getQuizzesWithLockStatus(
+  courseId: string,
+  userId: string
+): Promise<Map<string, {
+  isLocked: boolean
+  incompleteModuleIds: string[]
+  incompleteAssignmentIds: string[]
+}>> {
+  const supabase = getClient()
+  const result = new Map()
+  if (!supabase) return result
+
+  // Get all quizzes for the course
+  const { data: quizzes, error } = await supabase
+    .from('quizzes')
+    .select('id')
+    .eq('course_id', courseId)
+
+  if (error || !quizzes) return result
+
+  for (const quiz of quizzes) {
+    const lockStatus = await isQuizUnlockedForUser(quiz.id, userId)
+    result.set(quiz.id, {
+      isLocked: !lockStatus.isUnlocked,
+      incompleteModuleIds: lockStatus.incompleteModuleIds,
+      incompleteAssignmentIds: lockStatus.incompleteAssignmentIds
+    })
+  }
+
+  return result
+}
+

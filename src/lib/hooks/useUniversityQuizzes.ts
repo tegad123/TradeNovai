@@ -20,6 +20,8 @@ import {
   getQuizAttempts,
   getStudentQuizAttempts,
   getQuizStats,
+  getStudentVisibleQuizzes,
+  getQuizzesWithLockStatus,
   type Quiz,
   type QuizWithQuestions,
   type QuizAttempt,
@@ -36,11 +38,19 @@ import type {
 interface UseUniversityQuizzesOptions {
   courseId: string
   role: 'student' | 'instructor' | null
+  studentId?: string
+}
+
+interface QuizLockStatus {
+  isLocked: boolean
+  incompleteModuleIds: string[]
+  incompleteAssignmentIds: string[]
 }
 
 interface UseUniversityQuizzesReturn {
   // Data
   quizzes: Quiz[]
+  quizLockStatus: Map<string, QuizLockStatus>
   loading: boolean
   error: string | null
   
@@ -54,8 +64,9 @@ interface UseUniversityQuizzesReturn {
   refresh: () => void
 }
 
-export function useUniversityQuizzes({ courseId, role }: UseUniversityQuizzesOptions): UseUniversityQuizzesReturn {
+export function useUniversityQuizzes({ courseId, role, studentId }: UseUniversityQuizzesOptions): UseUniversityQuizzesReturn {
   const [quizzes, setQuizzes] = useState<Quiz[]>([])
+  const [quizLockStatus, setQuizLockStatus] = useState<Map<string, QuizLockStatus>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -65,12 +76,18 @@ export function useUniversityQuizzes({ courseId, role }: UseUniversityQuizzesOpt
     try {
       setLoading(true)
       setError(null)
-      const data = await getQuizzesByCourse(courseId)
       
-      // Filter for students: only show published quizzes
-      if (role === 'student') {
-        setQuizzes(data.filter(q => q.is_published))
+      if (role === 'student' && studentId) {
+        // For students: use visibility filtering (handles is_restricted and targeting)
+        const visibleQuizzes = await getStudentVisibleQuizzes(courseId, studentId)
+        setQuizzes(visibleQuizzes)
+        
+        // Also fetch lock status for prerequisites
+        const lockStatus = await getQuizzesWithLockStatus(courseId, studentId)
+        setQuizLockStatus(lockStatus)
       } else {
+        // For instructors: show all quizzes
+        const data = await getQuizzesByCourse(courseId)
         setQuizzes(data)
       }
     } catch (err) {
@@ -79,7 +96,7 @@ export function useUniversityQuizzes({ courseId, role }: UseUniversityQuizzesOpt
     } finally {
       setLoading(false)
     }
-  }, [courseId, role])
+  }, [courseId, role, studentId])
 
   useEffect(() => {
     fetchQuizzes()
@@ -128,6 +145,7 @@ export function useUniversityQuizzes({ courseId, role }: UseUniversityQuizzesOpt
 
   return {
     quizzes,
+    quizLockStatus,
     loading,
     error,
     createNewQuiz,
